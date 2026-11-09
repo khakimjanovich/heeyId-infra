@@ -1,0 +1,10 @@
+# Every alert goes to heeyid-email, one email per service and alert, repeated every 4 hours while it
+# lasts.
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: heeyid-email
+    group_by: [alertname, service_name]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 4h

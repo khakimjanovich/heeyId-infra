@@ -1,0 +1,8 @@
+# heeyID's dashboards, next to the ones the image brings (JVM, RED metrics).
+apiVersion: 1
+providers:
+  - name: heeyid
+    folder: heeyid
+    type: file
+    options:
+      path: /otel-lgtm/heeyid-dashboards

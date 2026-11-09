@@ -1,0 +1,29 @@
+# The installer: its scripts parse under the bash macOS ships (3.2), and docs/settings.md's tables is the
+# one scripts/install.sh docs writes from scripts/inputs.json, which names exactly the inputs Tofu reads.
+# Pushes to main and every pull request.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request cancels the run it makes obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    runs-on: self-hosted # the owner's macOS runner
+    steps:
+      - uses: actions/checkout@v7
+      - name: The scripts parse under bash 3.2
+        run: |
+          /bin/bash --version | head -n 1
+          for script in scripts/*.sh; do /bin/bash -n "$script"; done
+      - name: docs/settings.md's tables matches the inputs
+        run: /bin/bash scripts/install.sh docs --check

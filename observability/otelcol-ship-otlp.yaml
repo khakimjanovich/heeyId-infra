@@ -1,0 +1,19 @@
+# Every log line to the bank's collector over OTLP/HTTP (LOG_SHIP_PROTOCOL=otlp): the apps' OTLP logs,
+# the containers' and Vault's audit (otelcol-heeyid.yaml). TLS with the bank's CA (SHIP_TRUSTED_CAS),
+# SHIP_AUTHORIZATION as the Authorization header when the bank gives one (observability/start.sh adds it); a queue on disk rides out an
+# outage of the collector.
+exporters:
+  otlp_http/ship:
+    logs_endpoint: ${env:LOG_SHIP_ENDPOINT} # the full URL, as given
+    tls:
+      ca_file: /tmp/tls/ship-ca.pem
+    sending_queue:
+      enabled: true
+      storage: file_storage/heeyid
+
+service:
+  pipelines:
+    logs/ship:
+      receivers: [otlp, filelog/containers, filelog/vault-audit]
+      processors: [batch]
+      exporters: [otlp_http/ship]

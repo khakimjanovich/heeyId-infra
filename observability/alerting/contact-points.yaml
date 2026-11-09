@@ -1,0 +1,12 @@
+# Where alerts go: email through GF_SMTP_HOST (Mailpit when MAILPIT=on, read at
+# https://mailpit.<CONSOLES_DOMAIN>) to ALERT_EMAILS (secret/env/observability), ';'-separated.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: heeyid-email
+    receivers:
+      - uid: heeyid-email
+        type: email
+        settings:
+          addresses: ${ALERT_EMAILS}
+          singleEmail: true

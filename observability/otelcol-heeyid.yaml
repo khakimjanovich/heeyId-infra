@@ -1,0 +1,55 @@
+# heeyID's additions to the image's own collector (/otel-lgtm/otelcol-config.yaml), merged over it by
+# observability/start.sh. Besides the apps' OTLP logs, every container's log file (Postgres, Valkey,
+# Vault, Keycloak, the consoles' door, this container) and Vault's audit file go to the local Loki; with
+# a log shipping file (otelcol-ship-otlp.yaml or otelcol-ship-syslog.yaml) all of them go to the bank's
+# collector too.
+extensions:
+  # Where each file was read up to, and what waits to be sent: on observability-data, so a restart
+  # neither repeats nor loses a line.
+  file_storage/heeyid:
+    directory: /data/otelcol-heeyid
+    create_directory: true
+
+receivers:
+  # Docker's json-file logs (docker-compose.yml, x-logging): one JSON object per line, the container's
+  # name in attrs.tag.
+  filelog/containers:
+    include: [/docker-containers/*/*-json.log]
+    start_at: beginning
+    storage: file_storage/heeyid
+    operators:
+      # heeyID's containers only (projects heeyid and heeyid-vault): another unit's on the same host
+      # ships its own.
+      - type: filter
+        expr: 'body not matches "\"tag\":\"heeyid-"'
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+      - type: move
+        from: attributes.attrs.tag
+        to: resource["service.name"]
+      - type: move
+        from: attributes.log
+        to: body
+      - type: remove
+        field: attributes.attrs
+      # The MyID adapter sends its lines over OTLP already (masked): not its console copy.
+      - type: filter
+        expr: 'resource["service.name"] matches "^heeyid-myid-adapter-[0-9]+$"'
+  # Vault's audit device (vault/tofu/main.tf), with the files it was rotated to (vault/audit-rotate.sh).
+  filelog/vault-audit:
+    include: [/vault-audit/audit.log*]
+    start_at: beginning
+    storage: file_storage/heeyid
+    resource:
+      service.name: vault-audit
+
+service:
+  extensions: [health_check, file_storage/heeyid]
+  pipelines:
+    logs/files:
+      receivers: [filelog/containers, filelog/vault-audit]
+      processors: [batch]
+      exporters: [otlp_http/logs]

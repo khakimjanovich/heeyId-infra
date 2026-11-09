@@ -1,0 +1,18 @@
+# Every trace to the bank's collector over OTLP/HTTP (TRACES_SHIP_ENDPOINT, the full URL): the apps',
+# which also stay in this stack. TLS with the bank's CA (SHIP_TRUSTED_CAS), SHIP_AUTHORIZATION as the
+# Authorization header when the bank gives one; a queue on disk rides out an outage of the collector.
+exporters:
+  otlp_http/ship-traces:
+    traces_endpoint: ${env:TRACES_SHIP_ENDPOINT}
+    tls:
+      ca_file: /tmp/tls/ship-ca.pem
+    sending_queue:
+      enabled: true
+      storage: file_storage/heeyid
+
+service:
+  pipelines:
+    traces/ship:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/ship-traces]
