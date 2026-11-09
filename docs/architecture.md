@@ -10,7 +10,7 @@ For now it runs what the MyID adapter needs, with its stores, sign-in and observ
 |---|---|---|
 | `vault` (`heeyid-vault`) | settings and secrets, heeyID's CA | the consoles' door (`vault.<CONSOLES_DOMAIN>`), the installer |
 | `postgres`, `postgres-init` | Keycloak's database | Keycloak |
-| `valkey` | each tenant's MyID tokens (keys `<tenant prefix>:myid-adapter:*`), one ACL user per service, append-only file each second | the MyID adapter (user `myid-adapter`) |
+| `valkey` | each tenant's MyID tokens (keys `t:<tenant>:myid-adapter:*`, encrypted), one ACL user per service, append-only file each second | the MyID adapter (user `myid-adapter`) |
 | `heeyid-keycloak`, `keycloak-config` | realm `services` (services' tokens), realm `people` (the consoles' people, from the bank's directory) | services at `https://heeyid-keycloak:8443`, people through the consoles' door |
 | `observability` | Grafana, Loki, Prometheus, Tempo, the collector; alerts by mail | Grafana through the consoles' door |
 | `mailpit` (when `MAILPIT=on`) | catches the alert mails | the consoles' door |

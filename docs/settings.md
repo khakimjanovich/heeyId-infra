@@ -27,6 +27,7 @@ Change a value, with a root token ([vault.md](vault.md)): `v kv patch secret/inp
 | `ALERT_EMAILS` | where alerts go, `;`-separated | `oncall@example.com;security@example.com` |
 | `MYID_BASE_URL` | MyID's host for this zone (`{myid_host}` in MyID's documentation): its test environment on stage, its production service in production (SAD §6, zone separation). `https://<host>`, no path | `https://myid-host.example.uz` |
 | `MYID_MEDIA_URL` | MyID's media host for this zone (`{myid_media_host}`, the Inplace photo upload), from the same contract as MYID_BASE_URL | `https://myid-media-host.example.uz` |
+| `MYID_TRUSTED_CAS` | the CA that signed MyID's certificates for this zone (PEM; the installer asks for the file). The adapter trusts MyID only through it (SAD TB-5, pinned CA) | `~/tls/myid-ca.pem` |
 | `LDAP_URL` | the bank's directory (Active Directory or another LDAP server) the consoles' people sign in with, over TLS only: `ldaps://<host>[:<port>]`. Keycloak reads people and their two groups from it, never writes; their passwords stay there | `ldaps://dc.example.com:636` |
 | `LDAP_TRUSTED_CAS` | the CA that signed the directory's certificate (PEM; the installer asks for the file) | `~/tls/directory-ca.pem` |
 | `LDAP_VENDOR` | `ad` for Active Directory, `other` for another LDAP server (OpenLDAP, 389 Directory Server, …) | `ad` |

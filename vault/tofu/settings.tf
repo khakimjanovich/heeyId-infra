@@ -65,6 +65,11 @@ resource "random_password" "this" {
   special  = false # values go into env files and JDBC URLs unquoted
 }
 
+# The AES-256 key of the MyID tokens in Valkey (SAD TB-5: cached in Valkey only encrypted).
+resource "random_bytes" "myid_token_key" {
+  length = 32
+}
+
 resource "random_password" "caller" {
   for_each = local.callers
   length   = 32
@@ -314,6 +319,9 @@ resource "vault_kv_secret_v2" "myid_adapter" {
     MYID_ADAPTER_TENANTS_FILE    = "/run/myid-tenants/myid-tenants.yaml" # docker-compose.yml, myid-tenants
     MYID_BASE_URL                = local.input["MYID_BASE_URL"]
     MYID_MEDIA_URL               = local.input["MYID_MEDIA_URL"]
+    # SAD TB-5: MyID over TLS with a pinned CA, and its tokens in Valkey only encrypted.
+    MYID_TRUSTED_CAS       = local.input["MYID_TRUSTED_CAS"]
+    MYID_ADAPTER_TOKEN_KEY = random_bytes.myid_token_key.base64
     # MyID answers each call in 5 s, an Inplace or compare result in 30 s (docs.myid.uz).
     MYID_CONNECT_TIMEOUT = "2s"
     MYID_READ_TIMEOUT    = "35s"
