@@ -1,0 +1,75 @@
+{
+  "uid": "heeyid-logs",
+  "title": "heeyID \u00b7 logs",
+  "tags": [
+    "heeyid"
+  ],
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "type": "custom",
+        "name": "level",
+        "label": "Level",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "query": "error,warn,info,debug"
+      },
+      {
+        "type": "textbox",
+        "name": "search",
+        "label": "Contains",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "logs",
+      "title": "myid-adapter (MyID): every line, newest first (each links to its trace)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 12
+      },
+      "id": 1,
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "{service_name=\"myid-adapter\"} | detected_level=~\"${level:regex}\" |= \"$search\""
+        }
+      ]
+    }
+  ],
+  "editable": false
+}

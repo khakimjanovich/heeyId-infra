@@ -1,0 +1,238 @@
+name: heeyid
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:?LOG_MAX_SIZE is required}"
+    max-file: "${LOG_MAX_FILES:?LOG_MAX_FILES is required}"
+    tag: "{{.Name}}"
+
+x-healthcheck: &healthcheck
+  interval: 5s
+  timeout: 5s
+  retries: 30
+
+networks:
+  default:
+  consoles:
+  vault:
+    name: heeyid-vault
+    external: true
+
+services:
+
+  # Keycloak's database, for now the only one here (the gateways' come with them).
+  postgres:
+    image: postgres:17.6-alpine
+    logging: *logging
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=200", "-c", "log_connections=on", "-c", "log_disconnections=on",
+      "-c", "log_statement=ddl", "-c", "log_line_prefix=%m [%p] user=%u db=%d host=%h app=%a "]
+    environment:
+      POSTGRES_DB: heeyid
+      POSTGRES_USER: heeyid_admin
+    env_file: [{ path: .env.vault/postgres.env, required: true }] # rendered from Vault, secret/env/postgres
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "pg_isready -U heeyid_admin -d heeyid"]
+
+  postgres-init:
+    image: postgres:17.6-alpine
+    logging: *logging
+    entrypoint: ["/bin/sh", "/sql/init.sh"]
+    env_file: [{ path: .env.vault/postgres.env, required: true }] # rendered from Vault, secret/env/postgres
+    environment:
+      PGOPTIONS: -c client_min_messages=warning
+    volumes: ["./postgres:/sql:ro"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  # SAD §6: Valkey 8, append-only file each second. The default user is off; each service signs in as
+  # its own ACL user, limited to its own keys and commands (valkey/start.sh).
+  valkey:
+    image: valkey/valkey:8.1.4-alpine
+    logging: *logging
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 512M } } }
+    entrypoint: ["/bin/sh", "/start.sh"]
+    env_file: [{ path: .env.vault/valkey.env, required: true }] # rendered from Vault, secret/env/valkey
+    volumes:
+      - ./valkey/start.sh:/start.sh:ro
+      - valkey-data:/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$VALKEY_MYID_ADAPTER_PASSWORD\" valkey-cli --user myid-adapter ping | grep -q PONG"]
+
+  heeyid-keycloak:
+    image: quay.io/keycloak/keycloak:26.4.0
+    logging: *logging
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/tls.sh"]
+    command: ["start", "--import-realm"]
+    deploy: { resources: { limits: { memory: 1G } } }
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_HTTP_ENABLED: "false"
+      KC_HTTPS_PORT: "8443"
+      KC_HTTPS_CERTIFICATE_FILE: /tmp/tls/server.pem
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /tmp/tls/server-key.pem
+      KC_HTTPS_CLIENT_AUTH: none
+      KC_TRUSTSTORE_PATHS: /tmp/tls/directory-ca.pem
+      KC_HOSTNAME: https://heeyid-keycloak:8443
+      KC_HOSTNAME_ADMIN: https://keycloak.${CONSOLES_DOMAIN:?CONSOLES_DOMAIN is required}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_SCHEME: http
+    env_file: [{ path: .env.vault/keycloak.env, required: true }]
+    networks: [default, consoles]
+    volumes:
+      - ./keycloak/tls.sh:/tls.sh:ro
+      - ./keycloak/services-realm.json:/opt/keycloak/data/import/services-realm.json:ro
+    depends_on:
+      postgres-init: { condition: service_completed_successfully }
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+  keycloak-config:
+    image: quay.io/keycloak/keycloak:26.4.0
+    logging: *logging
+    entrypoint: ["/bin/bash", "/configure.sh"]
+    env_file: [{ path: .env.vault/keycloak-config.env, required: true }]
+    environment:
+      CONSOLES_DOMAIN: "${CONSOLES_DOMAIN:?CONSOLES_DOMAIN is required}"
+    volumes:
+      - ./keycloak/configure.sh:/configure.sh:ro
+      - ./keycloak/services-realm.json:/services-realm.json:ro
+    depends_on:
+      heeyid-keycloak: { condition: service_healthy }
+    restart: "no"
+
+  mailpit:
+    profiles: [mailpit]
+    image: axllent/mailpit:v1.31.5
+    logging: *logging
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/tls.sh"]
+    env_file: [{ path: .env.vault/mailpit.env, required: true }]
+    environment:
+      MP_UI_TLS_CERT: /tmp/tls/server.pem
+      MP_UI_TLS_KEY: /tmp/tls/server-key.pem
+    volumes: ["./consoles/mailpit-tls.sh:/tls.sh:ro"]
+    networks: [default, consoles]
+
+  observability:
+    image: grafana/otel-lgtm:0.30.0
+    logging: *logging
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/start.sh"]
+    env_file: [{ path: .env.vault/observability.env, required: true }]
+    networks: [default, consoles]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_CERT_FILE: /tmp/tls/server.pem # observability/start.sh
+      GF_SERVER_CERT_KEY: /tmp/tls/server-key.pem
+      GF_SERVER_ROOT_URL: https://grafana.${CONSOLES_DOMAIN:?CONSOLES_DOMAIN is required}
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: heeyID Keycloak
+      GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "true"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile
+      GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://keycloak.${CONSOLES_DOMAIN:?CONSOLES_DOMAIN is required}/realms/people/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://heeyid-keycloak:8443/realms/people/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: https://heeyid-keycloak:8443/realms/people/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_TLS_CLIENT_CA: /tmp/tls/ca.pem
+      GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: preferred_username
+      GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: "email || join('@', [preferred_username, 'consoles.invalid'])"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'console.admin') && 'Admin' || contains(roles[*], 'console.viewer') && 'Viewer' || ''"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "true"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_SIGNOUT_REDIRECT_URL: https://keycloak.${CONSOLES_DOMAIN:?CONSOLES_DOMAIN is required}/realms/people/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=https%3A%2F%2Fgrafana.${CONSOLES_DOMAIN:?CONSOLES_DOMAIN is required}%2Flogin
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_FROM_NAME: heeyID alerts
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "curl -sfk https://127.0.0.1:3000/api/health > /dev/null && /otel-lgtm/docker/healthcheck.sh > /dev/null"]
+    volumes:
+      - ./observability/start.sh:/start.sh:ro
+      - ./observability/otelcol-heeyid.yaml:/heeyid/otelcol-heeyid.yaml:ro
+      - ./observability/otelcol-ship-otlp.yaml:/heeyid/otelcol-ship-otlp.yaml:ro
+      - ./observability/otelcol-ship-syslog.yaml:/heeyid/otelcol-ship-syslog.yaml:ro
+      - ./observability/otelcol-ship-metrics.yaml:/heeyid/otelcol-ship-metrics.yaml:ro
+      - ./observability/otelcol-ship-traces.yaml:/heeyid/otelcol-ship-traces.yaml:ro
+      - "${DOCKER_ROOT_DIR:?DOCKER_ROOT_DIR is required: run compose through scripts/stack.sh}/containers:/docker-containers:ro"
+      - vault-audit:/vault-audit:ro
+      - observability-data:/data
+      - ./observability/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/heeyid.yaml:ro
+      - ./observability/dashboards:/otel-lgtm/heeyid-dashboards:ro
+      - ./observability/alerting/rules.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/heeyid-rules.yaml:ro
+      - ./observability/cert-watch.sh:/heeyid/cert-watch.sh:ro
+      - ./observability/report.sh:/heeyid/report.sh:ro
+      - ./.env.vault/cert-expiry.txt:/heeyid/cert-expiry.txt:ro
+      - ./observability/alerting/contact-points.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/heeyid-contact-points.yaml:ro
+      - ./observability/alerting/policies.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/heeyid-policies.yaml:ro
+
+  heeyid-consoles:
+    init: true
+    image: nginxinc/nginx-unprivileged:1.29.2-alpine
+    logging: *logging
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 128M } } }
+    ports: ["${CONSOLES_ADDRESS:?CONSOLES_ADDRESS is required}:443:8443"]
+    networks: [consoles, vault]
+    environment:
+      CONSOLES_DOMAIN: "${CONSOLES_DOMAIN:?CONSOLES_DOMAIN is required}" # consoles/names.conf.stream-template
+    volumes:
+      - ./consoles/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./consoles/names.conf.stream-template:/etc/nginx/templates/names.conf.stream-template:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8443"]
+
+  # Each tenant's MyID credential (secret/myid-tenants, rendered as secret/env/myid-tenants) written
+  # to the myid-tenants volume as the adapter's config file, readable by the adapter's user only
+  # (USER 10001 in heeyid's Dockerfile); the host keeps it in .env.vault only. Runs before every start
+  # of the adapter, so a tenant added or removed counts at the adapter's next start.
+  myid-tenants:
+    profiles: [apps]
+    image: alpine:3.22.2
+    logging: *logging
+    entrypoint: ["/bin/sh", "-c", "set -eu; umask 077; printf '%s\\n' \"$${MYID_TENANTS_YAML:?MYID_TENANTS_YAML is required}\" > /tenants/myid-tenants.yaml.new && chown 10001 /tenants/myid-tenants.yaml.new && chmod 400 /tenants/myid-tenants.yaml.new && mv /tenants/myid-tenants.yaml.new /tenants/myid-tenants.yaml"]
+    env_file: [{ path: .env.vault/myid-tenants.env, required: true }]
+    network_mode: none
+    volumes: [myid-tenants:/tenants]
+    restart: "no"
+
+  myid-adapter:
+    profiles: [apps]
+    image: ghcr.io/khakimjanovich/myid-adapter:${HEEYID_VERSION:?HEEYID_VERSION is required}
+    logging: *logging
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 512M } } }
+    env_file: [{ path: .env.vault/myid-adapter.env, required: true }]
+    volumes: ["myid-tenants:/run/myid-tenants:ro"]
+    depends_on:
+      observability: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+      myid-tenants: { condition: service_completed_successfully }
+    healthcheck:
+      <<: *healthcheck
+      retries: 60
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/$${MYID_ADAPTER_MANAGEMENT_PORT} && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+
+volumes:
+  postgres-data:
+  valkey-data:
+  observability-data:
+  myid-tenants:
+  vault-audit:
+    name: heeyid_vault-audit
+    external: true

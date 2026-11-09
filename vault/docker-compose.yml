@@ -1,0 +1,66 @@
+# heeyID's Vault, its own stack: it starts before everything else, because every other service reads
+# its settings from it (scripts/stack.sh renders them before anything starts). A server with its data on
+# the vault-data volume (Raft), sealed at every start; scripts/install.sh initialises and unseals it.
+# Healthy only when unsealed. No service reads it while it runs yet; its network `heeyid-vault` is
+# joined only by the consoles' door, to pass browsers to its console. It publishes no port: people
+# reach its console as vault.<CONSOLES_DOMAIN> through heeyid-consoles (docker-compose.yml), and the
+# installer from inside this container.
+name: heeyid-vault
+
+# Its log as every container's in heeyID (docker-compose.yml, x-logging).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:?LOG_MAX_SIZE is required}"
+    max-file: "${LOG_MAX_FILES:?LOG_MAX_FILES is required}"
+    tag: "{{.Name}}"
+
+services:
+  vault:
+    image: hashicorp/vault:1.20.4
+    logging: *logging
+    restart: unless-stopped
+    command: ["server"] # the image's entrypoint adds -config=/vault/config
+    cap_add: [IPC_LOCK]
+    volumes:
+      - ./vault.hcl:/vault/config/vault.hcl:ro
+      - vault-data:/vault/file
+      - vault-audit:/vault/logs # the audit log (file device) survives a recreate
+      - vault-tls:/vault/tls # its certificate and key (scripts/stack.sh)
+      - vault-ca:/vault/ca # the CA that signed them
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      test: ["CMD", "vault", "status", "-address=https://127.0.0.1:8200", "-ca-cert=/vault/ca/ca.pem"]
+
+  # Vault's audit file rotated by size, then reopened without losing a line (vault/audit-rotate.sh,
+  # the bank keeps the trail). It sees Vault's process to signal it; it has nothing else of Vault's.
+  vault-audit-rotate:
+    image: hashicorp/vault:1.20.4
+    logging: *logging
+    restart: unless-stopped
+    pid: service:vault
+    user: root
+    entrypoint: ["/bin/sh", "/audit-rotate.sh"]
+    environment:
+      VAULT_AUDIT_MAX_MB: "${VAULT_AUDIT_MAX_MB:?VAULT_AUDIT_MAX_MB is required}"
+      VAULT_AUDIT_KEEP: "${VAULT_AUDIT_KEEP:?VAULT_AUDIT_KEEP is required}"
+    volumes:
+      - ./audit-rotate.sh:/audit-rotate.sh:ro
+      - vault-audit:/vault/logs
+    depends_on: [vault]
+
+networks:
+  default:
+    name: heeyid-vault
+
+volumes:
+  vault-tls:
+    name: heeyid_vault-tls
+  vault-ca:
+    name: heeyid_vault-ca
+  vault-audit:
+    name: heeyid_vault-audit
+  vault-data:
+    name: heeyid_vault-data

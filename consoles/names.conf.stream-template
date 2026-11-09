@@ -1,0 +1,9 @@
+# The consoles' names under CONSOLES_DOMAIN (.env.local), each to its console; the image fills in the
+# domain when it starts. vault/tofu's certificates name the same four.
+map $ssl_preread_server_name $console {
+  vault.${CONSOLES_DOMAIN} vault:8200;
+  keycloak.${CONSOLES_DOMAIN} heeyid-keycloak:8443;
+  grafana.${CONSOLES_DOMAIN} observability:3000;
+  mailpit.${CONSOLES_DOMAIN} mailpit:8025;
+  default 127.0.0.1:1; # nothing listens: refused
+}

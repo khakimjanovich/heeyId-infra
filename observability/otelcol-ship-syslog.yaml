@@ -1,0 +1,30 @@
+# Every log line to the bank's collector as syslog, RFC 5424 over TCP with TLS (LOG_SHIP_PROTOCOL=syslog):
+# the apps' OTLP logs, the containers' and Vault's audit (otelcol-heeyid.yaml). The message is the log
+# line, the app name its service. TLS with the bank's CA
+# (SHIP_TRUSTED_CAS). A queue on disk rides out an outage of the collector.
+processors:
+  transform/syslog:
+    log_statements:
+      - context: log
+        statements:
+          - set(attributes["message"], body.string)
+          - set(attributes["appname"], resource.attributes["service.name"])
+
+exporters:
+  syslog/ship:
+    endpoint: ${env:LOG_SHIP_HOST}
+    port: ${env:LOG_SHIP_PORT}
+    network: tcp
+    protocol: rfc5424
+    tls:
+      ca_file: /tmp/tls/ship-ca.pem
+    sending_queue:
+      enabled: true
+      storage: file_storage/heeyid
+
+service:
+  pipelines:
+    logs/ship:
+      receivers: [otlp, filelog/containers, filelog/vault-audit]
+      processors: [transform/syslog, batch]
+      exporters: [syslog/ship]

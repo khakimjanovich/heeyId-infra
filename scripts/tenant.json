@@ -1,0 +1,7 @@
+[
+  {"name":"MYID_TENANT","format":"^[a-z][a-z0-9-]{0,62}$","what":"the tenant's name, as heeyID's services send it in X-Tenant-Id: lower-case letters, digits and -, starting with a letter","example":"tenant-one"},
+  {"name":"MYID_CLIENT_ID","format":"^[^ ]+$","what":"the tenant's MyID client_id, from its contract with MyID for this zone","example":"bank-client-id"},
+  {"name":"MYID_CLIENT_SECRET","format":"^[^ ]+$","secret":true,"what":"that client's client_secret","example":"client-secret"},
+  {"name":"MYID_USERNAME","format":"^[^ ]+$","empty":true,"what":"the tenant's MyID login for the Backend API without personal data (photo comparison, the password grant); empty without that contract","example":"bank-login"},
+  {"name":"MYID_PASSWORD","format":"^[^ ]+$","empty":true,"secret":true,"what":"that login's password; empty with no login","example":"login-password"}
+]

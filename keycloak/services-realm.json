@@ -1,0 +1,75 @@
+{
+  "realm": "services",
+  "enabled": true,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      {
+        "name": "myid.use",
+        "description": "calls the MyID adapter (myid-adapter-api)"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "customer-gateway",
+      "name": "customer gateway, calling the MyID adapter",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "audience myid-adapter",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "myid-adapter",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "workers",
+      "name": "workers (lost code), calling the MyID adapter",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "audience myid-adapter",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "myid-adapter",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-customer-gateway",
+      "enabled": true,
+      "serviceAccountClientId": "customer-gateway",
+      "realmRoles": [
+        "myid.use"
+      ]
+    },
+    {
+      "username": "service-account-workers",
+      "enabled": true,
+      "serviceAccountClientId": "workers",
+      "realmRoles": [
+        "myid.use"
+      ]
+    }
+  ]
+}

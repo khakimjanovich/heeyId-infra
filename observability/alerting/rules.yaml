@@ -1,0 +1,343 @@
+# Alert rules, provisioned into Grafana's folder "heeyid". Datasources are the image's own: prometheus
+# and loki. Templates use ".Labels", never "$labels": Grafana reads "$name" in provisioning files as an
+# environment variable. The MyID adapter's problem lines are the platform's "✗ <status> <code> | ...".
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: heeyid
+    folder: heeyid
+    interval: 1m
+    rules:
+      - uid: heeyid-myid-unavailable
+        title: MyID unavailable
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "myid-adapter answered MYID_ADAPTER_SERVICE_UNAVAILABLE in the last 5 minutes"
+          description: "MyID did not answer in time, answered 5xx, or the adapter's breaker is open. Proofing stops (SRS E-PRF-10). See heeyID · logs for the lines with the code, and heeyID · availability for MyID answering."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: 'sum by (service_name) (count_over_time({service_name="myid-adapter"} |~ "✗ [0-9]+ MYID_ADAPTER_SERVICE_UNAVAILABLE " [5m]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-myid-breaker-open
+        title: MyID breaker open
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "myid-adapter's MyID breaker is open"
+          description: "MyID failed 5 times in a row (SAD §8): every call is refused without a call to MyID until a probe each 30 s gets an answer. Check MyID's status and the route to it (egress)."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 120, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'max by (service_name) (last_over_time(myid_breaker_open{service_name="myid-adapter"}[2m]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-myid-refused
+        title: MyID refuses the adapter
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "MyID refused myid-adapter's request or its credential in the last 5 minutes"
+          description: "MYID_ADAPTER_MYID_CLIENT_ERROR (MyID refused a request: a defect, not the customer's) or MYID_ADAPTER_UNAUTHORIZED (a tenant's MyID credential refused also after a renewal: check secret/myid-tenants with the bank's MyID contract). The tenant and MyID's answer are in the line's subErrors."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: 'sum by (service_name) (count_over_time({service_name="myid-adapter"} |~ "✗ [0-9]+ (MYID_ADAPTER_MYID_CLIENT_ERROR|MYID_ADAPTER_UNAUTHORIZED) " [5m]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-dependency-unavailable
+        title: Dependency unavailable
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ .Labels.service_name }} answered a *_UNAVAILABLE problem in the last 5 minutes"
+          description: "A dependency failed a request. See the Loki lines with the code; /actuator/health names the component."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: 'sum by (service_name) (count_over_time({service_name="myid-adapter"} |~ "✗ [0-9]+ [A-Z][A-Z0-9_]*_UNAVAILABLE " [5m]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-http-5xx
+        title: HTTP 5xx rate above 1%
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ .Labels.service_name }}: more than 1% of requests failed with 5xx for 5 minutes"
+          description: "Open the error logs in Loki for the service."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'sum by (service_name) (rate(http_server_requests_milliseconds_count{status=~"5.."}[5m])) / sum by (service_name) (rate(http_server_requests_milliseconds_count[5m]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0.01]}
+      - uid: heeyid-health-down
+        title: Health DOWN
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ .Labels.service_name }}: {{ .Labels.component }} is DOWN"
+          description: "A health indicator reports DOWN (Valkey for the MyID adapter's tokens, among others). The component is named in the labels; /actuator/health shows the same."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 120, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'max by (service_name, component) (last_over_time(platform_health_up{service_name=~"myid-adapter"}[2m]) == bool 0)'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-service-silent
+        title: Service sends no metrics
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ .Labels.service_name }} sent no metrics for 2 minutes"
+          description: "The service is down, stuck, or cannot reach the collector."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 120, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'absent_over_time(jvm_classes_loaded{service_name="myid-adapter"}[2m])'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-cert-expiring
+        title: Certificate ends soon
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "A certificate heeyID serves or trusts ends within CERT_ALERT_DAYS"
+          description: "The certificate watch (observability/cert-watch.sh) found one; its line (cert_expiring) names it and its end date, and the alert repeats daily until it is renewed. A service's or a console's: apply (it renews in the last 30 days); the directory's or the bank's collectors' CA: the bank's; heeyID's CA: plan its replacement."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: 'sum(count_over_time({service_name="cert-watch"} |= "cert_expiring" [10m]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-cert-watch-silent
+        title: Certificate watch stopped
+        condition: C
+        for: 30m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "No certificate watch has run for 25 hours"
+          description: "observability/cert-watch.sh writes cert_watch_ran daily; none came: certificates' ends aren't being watched (see observability's log)."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: 'sum(count_over_time({service_name="cert-watch"} |= "cert_watch_ran" [25h]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: lt, params: [1]}
