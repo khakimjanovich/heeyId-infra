@@ -1,0 +1,23 @@
+.gradle/
+build/
+bin/
+out/
+# IDE state (Eclipse/VS Code Java, IntelliJ)
+.settings/
+.project
+.classpath
+.factorypath
+.vscode/
+.idea/
+*.iml
+.DS_Store
+# Environments rendered from Vault (scripts/stack.sh): they hold secrets.
+.env.vault/
+# Vault keys and tokens never belong here; an old local copy (.vault-state) stays out of git.
+.vault-state*/
+# Per environment, never committed: the image versions (and ports) to run (docs/install-server.md, "Before you start").
+.env.local
+# The installer's progress and the access list (scripts/install.sh): no secret, but this host's.
+.install/
+# What goes between units (scripts/install.sh): what goes between heeyID and the bank's services.
+handoff/
