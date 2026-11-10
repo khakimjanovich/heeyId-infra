@@ -322,9 +322,11 @@ resource "vault_kv_secret_v2" "myid_adapter" {
     # SAD TB-5: MyID over TLS with a pinned CA, and its tokens in Valkey only encrypted.
     MYID_TRUSTED_CAS       = local.input["MYID_TRUSTED_CAS"]
     MYID_ADAPTER_TOKEN_KEY = random_bytes.myid_token_key.base64
-    # MyID answers each call in 5 s, an Inplace or compare result in 30 s (docs.myid.uz).
-    MYID_CONNECT_TIMEOUT = "2s"
-    MYID_READ_TIMEOUT    = "35s"
+    # MyID answers each call in 5 s; /users/me, the Inplace job result and the compare results in 30 s
+    # (docs.myid.uz).
+    MYID_CONNECT_TIMEOUT   = "2s"
+    MYID_READ_TIMEOUT      = "7s"
+    MYID_LONG_READ_TIMEOUT = "35s"
     # SAD §8: the breaker opens after 5 failures in a row and probes each 30 s.
     MYID_BREAKER_FAILURES    = "5"
     MYID_BREAKER_PROBE_AFTER = "30s"
