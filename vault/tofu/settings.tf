@@ -5,18 +5,12 @@
 #     service's certificate (renewed by apply in its last 30 days);
 #   - the environment's: what only its operator knows (MyID's hosts, the bank's collectors, mail, the
 #     directory), read from secret/input/heeyid, which scripts/install.sh writes (docs/settings.md,
-#     "Settings"); and each tenant's MyID credential, from secret/myid-tenants (scripts/install.sh
-#     add-tenant). A key missing there stops plan.
+#     "Settings"), the MyID credential among them. A key missing there stops plan.
 # Rotating a generated value: `tofu apply -replace=<resource>`, then deploy.
 
 data "vault_kv_secret_v2" "input" {
   mount = vault_mount.secret.path
   name  = "input/heeyid"
-}
-
-data "vault_kv_secret_v2" "myid_tenants" {
-  mount = vault_mount.secret.path
-  name  = "myid-tenants"
 }
 
 locals {
@@ -44,17 +38,6 @@ locals {
     "heeyid-keycloak" = ["keycloak.${var.consoles_domain}"]
     "mailpit"         = ["mailpit.${var.consoles_domain}"]
   }
-  # Each tenant's MyID credential, one key per tenant (its X-Tenant-Id), JSON {client-id,
-  # client-secret, username, password}: the last two only for the Backend API without personal data,
-  # empty without it. scripts/install.sh add-tenant writes it; the adapter reads it as a file
-  # (myid.tenants, docker-compose.yml, myid-tenants).
-  # The names are not secret; the credentials stay sensitive.
-  myid_tenants = { for name in nonsensitive(keys(data.vault_kv_secret_v2.myid_tenants.data)) :
-  name => jsondecode(data.vault_kv_secret_v2.myid_tenants.data[name]) }
-  myid_tenants_yaml = yamlencode({ myid = { tenants = { for name, t in local.myid_tenants : name => merge(
-    { client-id = t["client-id"], client-secret = t["client-secret"] },
-    t["username"] == "" ? {} : { username = t["username"], password = t["password"] },
-  ) } } })
   # The ship settings: an empty endpoint ships nothing of that kind.
   shipping = local.input["LOG_SHIP_PROTOCOL"] != "off" || local.input["METRICS_SHIP_ENDPOINT"] != "" || local.input["TRACES_SHIP_ENDPOINT"] != ""
 }
@@ -152,7 +135,7 @@ resource "vault_kv_secret_v2" "postgres" {
 }
 
 # Valkey: the default user is off; each service has its own ACL user for its own keys
-# (valkey/start.sh). Keys carry the tenant prefix first (SAD §6, "Cache"), then the service's name.
+# (valkey/start.sh). Keys start with the service's name (SAD §6, "Cache").
 resource "vault_kv_secret_v2" "valkey" {
   mount = vault_mount.secret.path
   name  = "env/valkey"
@@ -283,28 +266,6 @@ resource "vault_kv_secret_v2" "observability" {
   }
 }
 
-# Each tenant's MyID credential as the adapter's config file (myid.tenants): a one-shot writes it to a
-# volume only the adapter reads (docker-compose.yml, myid-tenants).
-resource "vault_kv_secret_v2" "myid_tenants" {
-  mount = vault_mount.secret.path
-  name  = "env/myid-tenants"
-  data_json = jsonencode({
-    MYID_TENANTS_YAML = local.myid_tenants_yaml
-  })
-  lifecycle {
-    precondition {
-      condition     = length(local.myid_tenants) > 0
-      error_message = "secret/myid-tenants has no tenant: scripts/install.sh add-tenant (the adapter does not start without one)."
-    }
-    precondition {
-      condition = alltrue([for name, t in local.myid_tenants :
-        can(regex("^[a-z][a-z0-9-]{0,62}$", name)) && t["client-id"] != "" && t["client-secret"] != ""
-      && (t["username"] == "") == (t["password"] == "")])
-      error_message = "secret/myid-tenants: each name lowercase letters, digits and -, with its client-id and client-secret, and username and password both or neither; scripts/install.sh add-tenant checks them."
-    }
-  }
-}
-
 resource "vault_kv_secret_v2" "myid_adapter" {
   mount = vault_mount.secret.path
   name  = "env/myid-adapter"
@@ -316,9 +277,13 @@ resource "vault_kv_secret_v2" "myid_adapter" {
     MYID_ADAPTER_SSL_TRUSTED_CAS = vault_pki_secret_backend_cert.this["myid-adapter"].issuing_ca
     MYID_ADAPTER_ISSUER_URI      = local.issuer
     MYID_ADAPTER_AUDIENCE        = "myid-adapter"
-    MYID_ADAPTER_TENANTS_FILE    = "/run/myid-tenants/myid-tenants.yaml" # docker-compose.yml, myid-tenants
     MYID_BASE_URL                = local.input["MYID_BASE_URL"]
     MYID_MEDIA_URL               = local.input["MYID_MEDIA_URL"]
+    # The adapter's MyID credential, one per installation (SAD v3.2 C-1).
+    MYID_CLIENT_ID     = local.input["MYID_CLIENT_ID"]
+    MYID_CLIENT_SECRET = local.input["MYID_CLIENT_SECRET"]
+    MYID_USERNAME      = local.input["MYID_USERNAME"]
+    MYID_PASSWORD      = local.input["MYID_PASSWORD"]
     # SAD TB-5: MyID over TLS with a pinned CA, and its tokens in Valkey only encrypted.
     MYID_TRUSTED_CAS       = local.input["MYID_TRUSTED_CAS"]
     MYID_ADAPTER_TOKEN_KEY = random_bytes.myid_token_key.base64

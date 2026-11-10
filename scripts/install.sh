@@ -7,7 +7,6 @@ trap 'status=$?; [ $status -eq 0 ] || printf "\033[31minstall: stopped. Fix what
 UNIT=heeyid
 . scripts/helpers.sh # v, t, root, apply: the same helpers the operator uses
 INPUTS=scripts/inputs.json
-TENANT=scripts/tenant.json
 ANSWERS=
 
 say() { printf '%s\n' "$*"; }
@@ -455,7 +454,6 @@ wave_vault() {
   v secrets list -format=json < /dev/null | jq -e 'has("secret/")' > /dev/null \
     || tofu_apply -target=vault_mount.secret
   inputs
-  tenants_entry
   step "Every service's settings (vault/tofu)"
   tofu_apply
   stack settings || die "the settings can't be rendered or the images pulled (above)"
@@ -472,13 +470,12 @@ wave_vault() {
   token=$(render_token 5m)
   (VAULT_TOKEN=$token; export VAULT_TOKEN
     v kv get secret/env/stack < /dev/null > /dev/null || exit 1
-    ! v kv get secret/input/heeyid < /dev/null > /dev/null 2>&1 || exit 2
-    ! v kv get secret/myid-tenants < /dev/null > /dev/null 2>&1 || exit 3) || status=$?
+    ! v kv get secret/input/heeyid < /dev/null > /dev/null 2>&1 || exit 2) || status=$?
   revoke "$token"
   case $status in
-    0) say "A settings-only token reads secret/env/stack and is refused secret/input/heeyid and secret/myid-tenants." ;;
+    0) say "A settings-only token reads secret/env/stack and is refused secret/input/heeyid." ;;
     1) die "a settings-only token can't read secret/env/stack: policy env-read (vault/policies) isn't what OpenTofu wrote; t apply" ;;
-    *) die "a settings-only token reads secret/input/heeyid or secret/myid-tenants: policy env-read gives too much (vault/policies)" ;;
+    *) die "a settings-only token reads secret/input/heeyid: policy env-read gives too much (vault/policies)" ;;
   esac
 }
 access_vault() {
@@ -611,7 +608,6 @@ access_list() {
   cat "$ACCESS_LIST"
   cat << EOF
 
-A tenant more, or one less: scripts/install.sh add-tenant | remove-tenant <name>
 After a reboot: scripts/install.sh (it unseals and starts what's needed). Health any time: scripts/install.sh check
 EOF
 }
@@ -642,85 +638,6 @@ install() {
   access_list
 }
 
-tenants_entry() {
-  local status
-  v kv get secret/myid-tenants < /dev/null > /dev/null 2>&1 || status=$?
-  case ${status:-0} in
-    0) ;;
-    2) printf '{}' | v kv put secret/myid-tenants - > /dev/null; say "secret/myid-tenants is made, with no tenant yet." ;;
-    *) die "secret/myid-tenants can't be read (exit $status)" ;;
-  esac
-  [ "$(tenants_read | jq length)" -gt 0 ] && return
-  step "The first tenant's MyID credential (secret/myid-tenants)"
-  tenant_ask
-  tenant_write
-}
-
-tenants_read() {
-  v kv get -format=json secret/myid-tenants < /dev/null 2> /dev/null | jq -c .data.data \
-    || die "secret/myid-tenants can't be read: install heeyID first (scripts/install.sh)"
-}
-
-tenant_ask() {
-  VALUES='{}'
-  ask_list "$(jq -c . "$TENANT")" :
-  review "$(jq -c . "$TENANT")" :
-  printf '%s' "$VALUES" | jq -e '(.MYID_USERNAME == "") == (.MYID_PASSWORD == "")' > /dev/null \
-    || { [ -z "$ANSWERS" ] || die "$ANSWERS: MYID_USERNAME and MYID_PASSWORD, both or neither"
-      say "MYID_USERNAME and MYID_PASSWORD: both, or neither."; tenant_ask; }
-}
-
-tenant_write() {
-  local name tenants
-  name=$(printf '%s' "$VALUES" | jq -r .MYID_TENANT)
-  tenants=$(tenants_read | V=$VALUES jq -c --arg n "$name" '(env.V | fromjson) as $v
-    | . + {($n): ({"client-id": $v.MYID_CLIENT_ID, "client-secret": $v.MYID_CLIENT_SECRET,
-      "username": $v.MYID_USERNAME, "password": $v.MYID_PASSWORD} | tojson)}')
-  printf '%s' "$tenants" | v kv put secret/myid-tenants - > /dev/null
-  VALUES='{}'
-  say "Tenant $name is in secret/myid-tenants."
-}
-
-session() {
-  preflight
-  scripts/stack.sh vault-up < /dev/null
-  initialized || die "Vault is not initialised: install heeyID first (scripts/install.sh)"
-  vault_open
-  passphrase
-  local out
-  out=$(t init -input=false < /dev/null 2>&1) || { printf '%s\n' "$out"; die "OpenTofu's init failed (above)"; }
-}
-
-tenant_change() {
-  step "Every service's settings (vault/tofu), then the stack"
-  apply -input=false -auto-approve -compact-warnings < /dev/null
-  check
-  step "Closing the root-token session"
-  close_session
-}
-
-add_tenant() {
-  [ $# -eq 0 ] || { [ "$1" = --answers ] && [ $# -eq 2 ] || die "usage: scripts/install.sh add-tenant [--answers <file>]"; answers_file "$2"; }
-  session
-  step "A tenant's MyID credential (secret/myid-tenants)"
-  tenant_ask
-  tenant_write
-  tenant_change
-  say "The MyID adapter takes it from now on (it restarted with it)."
-}
-
-remove_tenant() {
-  [ $# -eq 1 ] || die "usage: scripts/install.sh remove-tenant <name>"
-  session
-  local tenants
-  tenants=$(tenants_read)
-  printf '%s' "$tenants" | jq -e --arg n "$1" 'has($n)' > /dev/null || die "secret/myid-tenants has no tenant $1"
-  [ "$(printf '%s' "$tenants" | jq length)" -gt 1 ] || die "$1 is the last tenant: the adapter doesn't start without one (add the next first)"
-  printf '%s' "$tenants" | jq -c --arg n "$1" 'del(.[$n])' | v kv put secret/myid-tenants - > /dev/null
-  say "Tenant $1 is out of secret/myid-tenants."
-  tenant_change
-}
-
 table() {
   jq -r 'def example: if . == "(empty)" then "empty" elif test(" ") then gsub("<"; "&lt;") else "`\(.)`" end;
     "| Key | What | Example (⏎: Enter takes it) |", "|---|---|---|",
@@ -736,26 +653,24 @@ with_table() {
 
 docs() {
   local new
-  new=$(with_table "$INPUTS" inputs "$(cat docs/settings.md)"); new=$(with_table "$TENANT" tenant "$new")
+  new=$(with_table "$INPUTS" inputs "$(cat docs/settings.md)")
   local both
-  both=$(jq -r '.[] | select(.suggested and .empty) | .name' "$INPUTS" "$TENANT")
+  both=$(jq -r '.[] | select(.suggested and .empty) | .name' "$INPUTS")
   [ -z "$both" ] || die "suggested and empty both: $both (scripts/inputs.json): Enter would mean two things"
   local listed used
   listed=$(jq -r '.[] | select(.file == null) | .name' "$INPUTS" | sort)
   used=$(grep -ho 'input\["[A-Z_]*"\]' vault/tofu/*.tf | sed 's/input\["\(.*\)"\]/\1/' | sort -u)
   [ "$listed" = "$used" ] || die "scripts/inputs.json and vault/tofu disagree: $(diff <(printf '%s\n' "$listed") <(printf '%s\n' "$used") | grep '^[<>]' | tr '\n' ' ')(< the list only, > vault/tofu only)"
   if [ "${1:-}" = --check ]; then
-    [ "$new" = "$(cat docs/settings.md)" ] || die "docs/settings.md's tables are not $INPUTS's and $TENANT's: scripts/install.sh docs"
-    say "docs/settings.md's tables are $INPUTS's and $TENANT's; vault/tofu reads exactly $INPUTS's Vault inputs."
+    [ "$new" = "$(cat docs/settings.md)" ] || die "docs/settings.md's table is not $INPUTS's: scripts/install.sh docs"
+    say "docs/settings.md's table is $INPUTS's; vault/tofu reads exactly $INPUTS's Vault inputs."
   else
     printf '%s\n' "$new" > docs/settings.md
-    say "docs/settings.md's tables written from $INPUTS and $TENANT."
+    say "docs/settings.md's table written from $INPUTS."
   fi
 }
 
 case "${1:-}" in
-  add-tenant) shift; add_tenant "$@" ;;
-  remove-tenant) shift; remove_tenant "$@" ;;
   check) check ;;
   docs) shift; docs "$@" ;;
   *) install "$@" ;;
