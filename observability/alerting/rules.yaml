@@ -92,7 +92,7 @@ groups:
           severity: critical
         annotations:
           summary: "MyID refused myid-adapter's request or its credential in the last 5 minutes"
-          description: "MYID_ADAPTER_MYID_CLIENT_ERROR (MyID refused a request: a defect, not the customer's) or MYID_ADAPTER_UNAUTHORIZED (a tenant's MyID credential refused also after a renewal: check secret/myid-tenants with the bank's MyID contract). The tenant and MyID's answer are in the line's subErrors."
+          description: "MYID_ADAPTER_MYID_CLIENT_ERROR (MyID refused a request: a defect, not the customer's) or MYID_ADAPTER_UNAUTHORIZED (the adapter's MyID credential refused also after a renewal: check MYID_CLIENT_ID, MYID_CLIENT_SECRET, MYID_USERNAME and MYID_PASSWORD in secret/input/heeyid with the bank's MyID contract). MyID's answer is in the line's subErrors."
         data:
           - refId: A
             relativeTimeRange: {from: 300, to: 0}

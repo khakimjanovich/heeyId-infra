@@ -122,7 +122,7 @@ settings() {
   vault_up
   vault_ready
   vault_tls_renew
-  render postgres valkey keycloak keycloak-config observability mailpit myid-tenants myid-adapter
+  render postgres valkey keycloak keycloak-config observability mailpit myid-adapter
   cert_list
   choices
   pull_images

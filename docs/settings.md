@@ -1,6 +1,6 @@
 # Settings
 
-Every service's settings are at `secret/env/<service>`, written by `t apply` ([`settings.tf`](../vault/tofu/settings.tf)) and generated where possible: passwords, client secrets and keys once, certificates from heeyID's CA. You supply only what the environment alone knows, at `secret/input/heeyid`, and each tenant's MyID credential, at `secret/myid-tenants`. A missing key stops `t apply` and names it. No setting has a default.
+Every service's settings are at `secret/env/<service>`, written by `t apply` ([`settings.tf`](../vault/tofu/settings.tf)) and generated where possible: passwords, client secrets and keys once, certificates from heeyID's CA. You supply only what the environment alone knows, at `secret/input/heeyid`. A missing key stops `t apply` and names it. No setting has a default.
 
 Change a value, with a root token ([vault.md](vault.md)): `v kv patch secret/input/heeyid KEY=value`, then `apply`.
 
@@ -28,6 +28,10 @@ Change a value, with a root token ([vault.md](vault.md)): `v kv patch secret/inp
 | `MYID_BASE_URL` | MyID's host for this zone (`{myid_host}` in MyID's documentation): its test environment on stage, its production service in production (SAD §6, zone separation). `https://<host>`, no path | `https://myid-host.example.uz` |
 | `MYID_MEDIA_URL` | MyID's media host for this zone (`{myid_media_host}`, the Inplace photo upload), from the same contract as MYID_BASE_URL | `https://myid-media-host.example.uz` |
 | `MYID_TRUSTED_CAS` | the CA that signed MyID's certificates for this zone (PEM; the installer asks for the file). The adapter trusts MyID only through it (SAD TB-5, pinned CA) | `~/tls/myid-ca.pem` |
+| `MYID_CLIENT_ID` | heeyID's MyID client_id, from the bank's contract with MyID for this zone (one per installation, SAD v3.2 C-1) | `bank-client-id` |
+| `MYID_CLIENT_SECRET` 🔒 | that client's client_secret | `client-secret` |
+| `MYID_USERNAME` | the MyID login for the Backend API without personal data (photo comparison, the password grant), from the same contract | `bank-login` |
+| `MYID_PASSWORD` 🔒 | that login's password | `login-password` |
 | `LDAP_URL` | the bank's directory (Active Directory or another LDAP server) the consoles' people sign in with, over TLS only: `ldaps://<host>[:<port>]`. Keycloak reads people and their two groups from it, never writes; their passwords stay there | `ldaps://dc.example.com:636` |
 | `LDAP_TRUSTED_CAS` | the CA that signed the directory's certificate (PEM; the installer asks for the file) | `~/tls/directory-ca.pem` |
 | `LDAP_VENDOR` | `ad` for Active Directory, `other` for another LDAP server (OpenLDAP, 389 Directory Server, …) | `ad` |
@@ -63,17 +67,3 @@ heeyID keeps its own logs, metrics and traces in its `observability` stack (Graf
 | traces | `TRACES_SHIP_ENDPOINT` (OTLP/HTTP) | stays here only |
 
 All of them over TLS, checked against `SHIP_TRUSTED_CAS`; `SHIP_AUTHORIZATION` is sent as the `Authorization` header to the OTLP ones when the bank wants one. `observability` checks each collector answers when it starts, and does not start when one doesn't. A queue on disk rides out an outage of a collector.
-
-## Tenants
-
-Each tenant's MyID credential is one key of `secret/myid-tenants`: its name (the `X-Tenant-Id` heeyID's services send) and a JSON value. `scripts/install.sh` asks for the first; `scripts/install.sh add-tenant` adds one (or replaces one of the same name), `scripts/install.sh remove-tenant <name>` takes one out. Each then runs `apply`, which restarts the MyID adapter with the new list. The adapter reads them as a file only it can read (`docker-compose.yml`, `myid-tenants`); the host keeps them only in `.env.vault/`.
-
-<!-- tenant: scripts/install.sh docs writes this table from scripts/tenant.json -->
-| Key | What | Example (⏎: Enter takes it) |
-|---|---|---|
-| `MYID_TENANT` | the tenant's name, as heeyID's services send it in X-Tenant-Id: lower-case letters, digits and -, starting with a letter | `tenant-one` |
-| `MYID_CLIENT_ID` | the tenant's MyID client_id, from its contract with MyID for this zone | `bank-client-id` |
-| `MYID_CLIENT_SECRET` 🔒 | that client's client_secret | `client-secret` |
-| `MYID_USERNAME` | the tenant's MyID login for the Backend API without personal data (photo comparison, the password grant); empty without that contract | `bank-login` |
-| `MYID_PASSWORD` 🔒 | that login's password; empty with no login | `login-password` |
-<!-- /tenant -->
