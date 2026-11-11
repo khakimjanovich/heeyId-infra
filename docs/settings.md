@@ -12,6 +12,7 @@ Change a value, with a root token ([vault.md](vault.md)): `v kv patch secret/inp
 | `HEEYID_VERSION` (`.env.local`) | the release to run: the images' tag, the git tag without the `v` (`local`: an image built on this host from heeyid, for a test stand) | `1.0.0` |
 | `CONSOLES_ADDRESS` (`.env.local`) | the address of the consoles' one door (heeyid-consoles, port 443): the host's address on the network the operators reach it from (the bank's jump host), never 0.0.0.0. It must stay fixed: a static address, or a DHCP reservation; the consoles' names (CONSOLES_DOMAIN) resolve to it | `192.0.2.20` |
 | `CONSOLES_DOMAIN` (`.env.local`) | the domain the consoles are named under: vault., keycloak., grafana. and mailpit. + it, each through the door on CONSOLES_ADDRESS, each certificate naming its name. The platform maps the names to CONSOLES_ADDRESS: the bank's DNS (one record, *.<domain>), or /etc/hosts on a lone machine | `consoles.example.com` |
+| `CALLBACKS_ADDRESS` (`.env.local`) | the address of the door for the SMS vendors' delivery reports (heeyid-callbacks, port 8080, plain HTTP): the host's address on the network the bank's ingress reaches it from, never 0.0.0.0. The ingress ends TLS for the public URL and passes only `/delivery-reports/` here; it must stay fixed | `192.0.2.21` |
 | `LOG_MAX_SIZE` (`.env.local`) | a container's log file size before Docker rotates it (`k` or `m`); the collector ships each line as it is written, so rotation loses nothing | `100m` ⏎ |
 | `LOG_MAX_FILES` (`.env.local`) | how many rotated log files Docker keeps per container | `5` ⏎ |
 | `VAULT_AUDIT_MAX_MB` (`.env.local`) | the size in MB at which Vault's audit file is rotated (Vault reopens it, no line lost) | `100` ⏎ |
@@ -32,6 +33,11 @@ Change a value, with a root token ([vault.md](vault.md)): `v kv patch secret/inp
 | `MYID_CLIENT_SECRET` 🔒 | that client's client_secret | `client-secret` |
 | `MYID_USERNAME` | the MyID login for the Backend API without personal data (photo comparison, the password grant), from the same contract | `bank-login` |
 | `MYID_PASSWORD` 🔒 | that login's password | `login-password` |
+| `XABAR_USERNAME` | heeyID's login at SMS Xabar (Play Mobile SMS-Broker API, Basic auth), from the bank's contract with Xabar | `bank-login` |
+| `XABAR_PASSWORD` 🔒 | that login's password | `xabar-password` |
+| `XABAR_ORIGINATOR` | the sender name the bank registered at Xabar: what the customer sees as the sender | `BANK` |
+| `XABAR_ADDRESSES` | the addresses Xabar sends its delivery reports from (ask Xabar): IPv4 addresses or networks, comma separated. heeyid-callbacks takes a report only for one of them, as the bank's ingress names it in X-Forwarded-For | `203.0.113.10,203.0.113.11` |
+| `CALLBACKS_INGRESS_ADDRESSES` | the addresses the bank's ingress connects to CALLBACKS_ADDRESS from: IPv4 addresses or networks, comma separated. heeyid-callbacks takes no connection from anywhere else, and trusts X-Forwarded-For only from these | `192.0.2.5` |
 | `LDAP_URL` | the bank's directory (Active Directory or another LDAP server) the consoles' people sign in with, over TLS only: `ldaps://<host>[:<port>]`. Keycloak reads people and their two groups from it, never writes; their passwords stay there | `ldaps://dc.example.com:636` |
 | `LDAP_TRUSTED_CAS` | the CA that signed the directory's certificate (PEM; the installer asks for the file) | `~/tls/directory-ca.pem` |
 | `LDAP_VENDOR` | `ad` for Active Directory, `other` for another LDAP server (OpenLDAP, 389 Directory Server, …) | `ad` |

@@ -69,6 +69,37 @@
           "expr": "{service_name=\"myid-adapter\"} | detected_level=~\"${level:regex}\" |= \"$search\""
         }
       ]
+    },
+    {
+      "type": "logs",
+      "title": "sms-adapter (SMS vendors): every line, newest first (each links to its trace)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 12
+      },
+      "id": 2,
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "{service_name=\"sms-adapter\"} | detected_level=~\"${level:regex}\" |= \"$search\""
+        }
+      ]
     }
   ],
   "editable": false

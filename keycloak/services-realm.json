@@ -7,13 +7,17 @@
       {
         "name": "myid.use",
         "description": "calls the MyID adapter (myid-adapter-api)"
+      },
+      {
+        "name": "sms.use",
+        "description": "calls the SMS adapter (sms-adapter-api)"
       }
     ]
   },
   "clients": [
     {
       "clientId": "customer-gateway",
-      "name": "customer gateway, calling the MyID adapter",
+      "name": "customer gateway, calling the MyID and SMS adapters",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -26,6 +30,16 @@
           "protocolMapper": "oidc-audience-mapper",
           "config": {
             "included.custom.audience": "myid-adapter",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience sms-adapter",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "sms-adapter",
             "access.token.claim": "true",
             "id.token.claim": "false"
           }
@@ -60,7 +74,8 @@
       "enabled": true,
       "serviceAccountClientId": "customer-gateway",
       "realmRoles": [
-        "myid.use"
+        "myid.use",
+        "sms.use"
       ]
     },
     {
