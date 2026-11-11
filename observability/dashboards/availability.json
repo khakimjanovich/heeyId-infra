@@ -488,6 +488,144 @@
       "id": 903
     },
     {
+      "type": "stat",
+      "title": "push-adapter",
+      "description": "push-adapter ready to take requests (its readiness, reported every minute). No data: it sends no metrics, so it is down or can't reach observability.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 4,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "min(last_over_time(platform_health_up{service_name=\"push-adapter\",component=\"readinessState\"}[2m]))",
+          "refId": "A"
+        }
+      ],
+      "id": 904
+    },
+    {
+      "type": "stat",
+      "title": "FCM breaker",
+      "description": "The push adapter's breaker (SAD \u00a78): open after 5 failures in a row; the adapter refuses without a call to FCM, until a probe each 30 s gets an answer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 4,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "closed",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "open",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(last_over_time(push_fcm_breaker_open{service_name=\"push-adapter\"}[2m]))",
+          "refId": "A"
+        }
+      ],
+      "id": 905
+    },
+    {
       "type": "timeseries",
       "title": "Calls to MyID per minute, by outcome",
       "description": "myid-adapter's calls to MyID, by outcome (SUCCESS, CLIENT_ERROR, SERVER_ERROR, UNKNOWN for no answer).",
@@ -669,7 +807,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service_name=~\"myid-adapter|sms-adapter|taf-adapter\"} | detected_level=~\"warn|error\"",
+          "expr": "{service_name=~\"myid-adapter|sms-adapter|taf-adapter|push-adapter\"} | detected_level=~\"warn|error\"",
           "refId": "A"
         }
       ],

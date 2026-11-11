@@ -131,6 +131,37 @@
           "expr": "{service_name=\"taf-adapter\"} | detected_level=~\"${level:regex}\" |= \"$search\""
         }
       ]
+    },
+    {
+      "type": "logs",
+      "title": "push-adapter (FCM): every line, newest first (each links to its trace)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 12
+      },
+      "id": 4,
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "{service_name=\"push-adapter\"} | detected_level=~\"${level:regex}\" |= \"$search\""
+        }
+      ]
     }
   ],
   "editable": false

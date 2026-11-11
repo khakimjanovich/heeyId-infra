@@ -4,7 +4,8 @@
 #   - generated here and written to both sides that must agree: passwords, client secrets, each
 #     service's certificate (renewed by apply in its last 30 days);
 #   - the environment's: what only its operator knows (MyID's hosts, the bank's collectors, mail, the
-#     directory, Xabar's login and addresses, TAF's hosts and credential), read from secret/input/heeyid, which scripts/install.sh
+#     directory, Xabar's login and addresses, TAF's hosts and credential, the FCM project and its
+#     service account), read from secret/input/heeyid, which scripts/install.sh
 #     writes (docs/settings.md, "Settings"), the MyID credential among them. A key missing there stops plan.
 # Rotating a generated value: `tofu apply -replace=<resource>`, then deploy.
 
@@ -23,7 +24,7 @@ locals {
     OTLP_LOGS_ENDPOINT    = "http://observability:4318/v1/logs"
   }
   # heeyID's services, each with its certificate from heeyID's CA (role heeyid-service).
-  services        = toset(["myid-adapter", "sms-adapter", "taf-adapter"])
+  services        = toset(["myid-adapter", "sms-adapter", "taf-adapter", "push-adapter"])
   internal_domain = "heeyid.internal"
   # The adapters' callers: heeyID's own clients in realm services (keycloak/services-realm.json), each
   # with the roles and audiences of the adapters it calls. Their deployables come later; their
@@ -415,6 +416,44 @@ resource "vault_kv_secret_v2" "taf_adapter" {
     precondition {
       condition     = strcontains(local.input["TAF_TRUSTED_CAS"], "BEGIN CERTIFICATE")
       error_message = "TAF_TRUSTED_CAS: the PEM of the CA that signed TAF's certificates for this zone."
+    }
+  }
+}
+
+# The push adapter keeps no state (no Valkey user). Its FCM credential is the bank's service-account
+# JSON key for this zone's Firebase project: here only base64 (one line in the env file); push/start.sh
+# writes it to FCM_CREDENTIALS_FILE on the container's memory volume (mode 0400) and drops the variable
+# before the adapter starts.
+resource "vault_kv_secret_v2" "push_adapter" {
+  mount = vault_mount.secret.path
+  name  = "env/push-adapter"
+  data_json = jsonencode(merge(local.otlp, {
+    PUSH_ADAPTER_PORT            = "8096"
+    PUSH_ADAPTER_MANAGEMENT_PORT = "8196"
+    PUSH_ADAPTER_SSL_CERTIFICATE = vault_pki_secret_backend_cert.this["push-adapter"].certificate
+    PUSH_ADAPTER_SSL_PRIVATE_KEY = vault_pki_secret_backend_cert.this["push-adapter"].private_key
+    PUSH_ADAPTER_SSL_TRUSTED_CAS = vault_pki_secret_backend_cert.this["push-adapter"].issuing_ca
+    PUSH_ADAPTER_ISSUER_URI      = local.issuer
+    PUSH_ADAPTER_AUDIENCE        = "push-adapter"
+    FCM_PROJECT_ID               = local.input["FCM_PROJECT_ID"]
+    FCM_CREDENTIALS_FILE         = "/run/fcm/service-account.json"
+    FCM_CREDENTIALS_JSON_BASE64  = base64encode(local.input["FCM_SERVICE_ACCOUNT"])
+    # SAD C-15: 5 s for the whole send, the SDK's retries included; SAD §8: the breaker opens after 5
+    # failures in a row and probes each 30 s.
+    FCM_CONNECT_TIMEOUT      = "2s"
+    FCM_READ_TIMEOUT         = "5s"
+    FCM_SEND_TIMEOUT         = "5s"
+    PUSH_BREAKER_FAILURES    = "5"
+    PUSH_BREAKER_PROBE_AFTER = "30s"
+  }))
+  lifecycle {
+    precondition {
+      condition     = try(jsondecode(local.input["FCM_SERVICE_ACCOUNT"]).type == "service_account", false)
+      error_message = "FCM_SERVICE_ACCOUNT: the JSON key of a Google service account (type service_account)."
+    }
+    precondition {
+      condition     = try(jsondecode(local.input["FCM_SERVICE_ACCOUNT"]).project_id == local.input["FCM_PROJECT_ID"], false)
+      error_message = "FCM_SERVICE_ACCOUNT: its project_id is not FCM_PROJECT_ID; the key must be from this zone's Firebase project."
     }
   }
 }

@@ -51,12 +51,12 @@ v token revoke -self
 | Wave | Does | Proves |
 |---|---|---|
 | 1 Host | checks Docker, Compose (not 2.32.0), `jq`, `openssl`, `curl`; asks for `.env.local`; ports free; images readable | the same |
-| 2 Vault | inits Vault (5 shares, 3 to unseal), shows shares and root token once until each keyholder pastes theirs back, unseals, asks the state passphrase, every setting ([settings.md](settings.md)), the MyID credential and the Xabar login among them, writes `secret/input/heeyid`, `tofu apply`, renders settings, pulls images | consoles' door up; `vault.<CONSOLES_DOMAIN>` serves heeyID's certificate; a settings-only token reads `secret/env/stack` and is refused `secret/input/heeyid` |
+| 2 Vault | inits Vault (5 shares, 3 to unseal), shows shares and root token once until each keyholder pastes theirs back, unseals, asks the state passphrase, every setting ([settings.md](settings.md)), the MyID credential and the Xabar login and the FCM service account's key among them, writes `secret/input/heeyid`, `tofu apply`, renders settings, pulls images | consoles' door up; `vault.<CONSOLES_DOMAIN>` serves heeyID's certificate; a settings-only token reads `secret/env/stack` and is refused `secret/input/heeyid` |
 | 3 Postgres | `postgres`, `postgres-init` | user `keycloak` signs in to its database |
 | 4 Valkey | `valkey` | users `myid-adapter`, `sms-adapter` and `taf-adapter` write their own keys only; nobody gets in without a sign-in |
-| 5 Keycloak | `heeyid-keycloak`, `keycloak-config` | `customer-gateway` gets a token for `myid-adapter`, `sms-adapter` and `taf-adapter` with roles `myid.use`, `sms.use` and `taf.use`; realm `people` sign-in answers with heeyID's certificate |
+| 5 Keycloak | `heeyid-keycloak`, `keycloak-config` | `customer-gateway` gets a token for `myid-adapter`, `sms-adapter` and `taf-adapter` with roles `myid.use`, `sms.use` and `taf.use`; `workers` gets one for `myid-adapter` and `push-adapter` with roles `myid.use` and `push.use`; realm `people` sign-in answers with heeyID's certificate |
 | 6 Grafana | `observability` (and `mailpit` when on) | sign-in redirects to realm `people`; Prometheus, Loki, Tempo answer |
-| 7 Adapters | `myid-adapter`, `sms-adapter`, `taf-adapter`, `heeyid-callbacks` | each adapter healthy, metrics in Grafana; the delivery reports' door refuses this host (403) |
+| 7 Adapters | `myid-adapter`, `sms-adapter`, `taf-adapter`, `push-adapter`, `heeyid-callbacks` | each adapter healthy, metrics in Grafana; the delivery reports' door refuses this host (403) |
 
 After the waves: whole stack once more, health check, Vault snapshot and OpenTofu state in `~/backups`, root token revoked, `.install/access.txt` written (URLs and groups, no secrets).
 
