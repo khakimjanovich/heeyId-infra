@@ -296,7 +296,7 @@ resource "vault_kv_secret_v2" "myid_adapter" {
     MYID_ADAPTER_AUDIENCE        = "myid-adapter"
     MYID_BASE_URL                = local.input["MYID_BASE_URL"]
     MYID_MEDIA_URL               = local.input["MYID_MEDIA_URL"]
-    # The adapter's MyID credential, one per installation (SAD v3.2 C-1).
+    # The adapter's MyID credential, one per installation (SAD C-13).
     MYID_CLIENT_ID     = local.input["MYID_CLIENT_ID"]
     MYID_CLIENT_SECRET = local.input["MYID_CLIENT_SECRET"]
     MYID_USERNAME      = local.input["MYID_USERNAME"]
