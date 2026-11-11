@@ -37,7 +37,7 @@ receivers:
         field: attributes.attrs
       # The adapters send their lines over OTLP already (masked): not their console copy.
       - type: filter
-        expr: 'resource["service.name"] matches "^heeyid-(myid|sms)-adapter-[0-9]+$"'
+        expr: 'resource["service.name"] matches "^heeyid-(myid|sms|taf)-adapter-[0-9]+$"'
   # Vault's audit device (vault/tofu/main.tf), with the files it was rotated to (vault/audit-rotate.sh).
   filelog/vault-audit:
     include: [/vault-audit/audit.log*]

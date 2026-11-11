@@ -4,7 +4,7 @@
 #   - generated here and written to both sides that must agree: passwords, client secrets, each
 #     service's certificate (renewed by apply in its last 30 days);
 #   - the environment's: what only its operator knows (MyID's hosts, the bank's collectors, mail, the
-#     directory, Xabar's login and addresses), read from secret/input/heeyid, which scripts/install.sh
+#     directory, Xabar's login and addresses, TAF's hosts and credential), read from secret/input/heeyid, which scripts/install.sh
 #     writes (docs/settings.md, "Settings"), the MyID credential among them. A key missing there stops plan.
 # Rotating a generated value: `tofu apply -replace=<resource>`, then deploy.
 
@@ -23,7 +23,7 @@ locals {
     OTLP_LOGS_ENDPOINT    = "http://observability:4318/v1/logs"
   }
   # heeyID's services, each with its certificate from heeyID's CA (role heeyid-service).
-  services        = toset(["myid-adapter", "sms-adapter"])
+  services        = toset(["myid-adapter", "sms-adapter", "taf-adapter"])
   internal_domain = "heeyid.internal"
   # The adapters' callers: heeyID's own clients in realm services (keycloak/services-realm.json), each
   # with the roles and audiences of the adapters it calls. Their deployables come later; their
@@ -45,13 +45,18 @@ locals {
 }
 
 resource "random_password" "this" {
-  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter", "valkey-sms-adapter"])
+  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter", "valkey-sms-adapter", "valkey-taf-adapter"])
   length   = 32
   special  = false # values go into env files and JDBC URLs unquoted
 }
 
 # The AES-256 key of the MyID tokens in Valkey (SAD TB-5: cached in Valkey only encrypted).
 resource "random_bytes" "myid_token_key" {
+  length = 32
+}
+
+# The AES-256 key of the TAF token in Valkey (SAD TB-5, the same rule).
+resource "random_bytes" "taf_token_key" {
   length = 32
 }
 
@@ -151,6 +156,7 @@ resource "vault_kv_secret_v2" "valkey" {
   data_json = jsonencode({
     VALKEY_MYID_ADAPTER_PASSWORD = random_password.this["valkey-myid-adapter"].result
     VALKEY_SMS_ADAPTER_PASSWORD  = random_password.this["valkey-sms-adapter"].result
+    VALKEY_TAF_ADAPTER_PASSWORD  = random_password.this["valkey-taf-adapter"].result
   })
 }
 
@@ -366,6 +372,49 @@ resource "vault_kv_secret_v2" "callbacks" {
     precondition {
       condition     = alltrue([for k in ["CALLBACKS_INGRESS_ADDRESSES", "XABAR_ADDRESSES"] : can(regex("^${local.address}(,${local.address})*$", local.input[k]))])
       error_message = "CALLBACKS_INGRESS_ADDRESSES, XABAR_ADDRESSES: IPv4 addresses or networks (a.b.c.d or a.b.c.d/n), comma separated, no spaces."
+    }
+  }
+}
+
+resource "vault_kv_secret_v2" "taf_adapter" {
+  mount = vault_mount.secret.path
+  name  = "env/taf-adapter"
+  data_json = jsonencode(merge(local.otlp, {
+    TAF_ADAPTER_PORT            = "8095"
+    TAF_ADAPTER_MANAGEMENT_PORT = "8195"
+    TAF_ADAPTER_SSL_CERTIFICATE = vault_pki_secret_backend_cert.this["taf-adapter"].certificate
+    TAF_ADAPTER_SSL_PRIVATE_KEY = vault_pki_secret_backend_cert.this["taf-adapter"].private_key
+    TAF_ADAPTER_SSL_TRUSTED_CAS = vault_pki_secret_backend_cert.this["taf-adapter"].issuing_ca
+    TAF_ADAPTER_ISSUER_URI      = local.issuer
+    TAF_ADAPTER_AUDIENCE        = "taf-adapter"
+    TAF_AUTH_URL                = local.input["TAF_AUTH_URL"]
+    TAF_AGENT_URL               = local.input["TAF_AGENT_URL"]
+    TAF_HEALTH_URL              = local.input["TAF_HEALTH_URL"]
+    # The adapter's TAF credential, one per installation (client_credentials).
+    TAF_CLIENT_ID     = local.input["TAF_CLIENT_ID"]
+    TAF_CLIENT_SECRET = local.input["TAF_CLIENT_SECRET"]
+    TAF_SCOPE         = local.input["TAF_SCOPE"]
+    # SAD TB-5: TAF over TLS with a pinned CA, and its token in Valkey only encrypted.
+    TAF_TRUSTED_CAS       = local.input["TAF_TRUSTED_CAS"]
+    TAF_ADAPTER_TOKEN_KEY = random_bytes.taf_token_key.base64
+    # SAD C-15: 5 s for each TAF call; the breaker opens after 5 failures in a row and probes each 30 s.
+    TAF_CONNECT_TIMEOUT     = "2s"
+    TAF_READ_TIMEOUT        = "5s"
+    TAF_BREAKER_FAILURES    = "5"
+    TAF_BREAKER_PROBE_AFTER = "30s"
+    VALKEY_HOST             = "valkey"
+    VALKEY_PORT             = "6379"
+    VALKEY_USERNAME         = "taf-adapter"
+    VALKEY_PASSWORD         = random_password.this["valkey-taf-adapter"].result
+  }))
+  lifecycle {
+    precondition {
+      condition     = alltrue([for k in ["TAF_AUTH_URL", "TAF_AGENT_URL", "TAF_HEALTH_URL"] : can(regex("^https://[a-z0-9.-]+(:[0-9]+)?(/[^ ]*)?$", local.input[k]))])
+      error_message = "TAF_AUTH_URL, TAF_AGENT_URL, TAF_HEALTH_URL: https://<host>[:<port>][/<path>], TAF's hosts for this zone (the adapter trusts them only through TAF_TRUSTED_CAS)."
+    }
+    precondition {
+      condition     = strcontains(local.input["TAF_TRUSTED_CAS"], "BEGIN CERTIFICATE")
+      error_message = "TAF_TRUSTED_CAS: the PEM of the CA that signed TAF's certificates for this zone."
     }
   }
 }

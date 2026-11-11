@@ -100,6 +100,37 @@
           "expr": "{service_name=\"sms-adapter\"} | detected_level=~\"${level:regex}\" |= \"$search\""
         }
       ]
+    },
+    {
+      "type": "logs",
+      "title": "taf-adapter (TAF): every line, newest first (each links to its trace)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 12
+      },
+      "id": 3,
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "{service_name=\"taf-adapter\"} | detected_level=~\"${level:regex}\" |= \"$search\""
+        }
+      ]
     }
   ],
   "editable": false
