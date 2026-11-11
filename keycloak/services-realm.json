@@ -11,13 +11,17 @@
       {
         "name": "sms.use",
         "description": "calls the SMS adapter (sms-adapter-api)"
+      },
+      {
+        "name": "taf.use",
+        "description": "calls the TAF adapter (taf-adapter-api)"
       }
     ]
   },
   "clients": [
     {
       "clientId": "customer-gateway",
-      "name": "customer gateway, calling the MyID and SMS adapters",
+      "name": "customer gateway, calling the MyID, SMS and TAF adapters",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -40,6 +44,16 @@
           "protocolMapper": "oidc-audience-mapper",
           "config": {
             "included.custom.audience": "sms-adapter",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience taf-adapter",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "taf-adapter",
             "access.token.claim": "true",
             "id.token.claim": "false"
           }
@@ -75,7 +89,8 @@
       "serviceAccountClientId": "customer-gateway",
       "realmRoles": [
         "myid.use",
-        "sms.use"
+        "sms.use",
+        "taf.use"
       ]
     },
     {

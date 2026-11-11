@@ -38,6 +38,13 @@ Change a value, with a root token ([vault.md](vault.md)): `v kv patch secret/inp
 | `XABAR_ORIGINATOR` | the sender name the bank registered at Xabar: what the customer sees as the sender | `BANK` |
 | `XABAR_ADDRESSES` | the addresses Xabar sends its delivery reports from (ask Xabar): IPv4 addresses or networks, comma separated. heeyid-callbacks takes a report only for one of them, as the bank's ingress names it in X-Forwarded-For | `203.0.113.10,203.0.113.11` |
 | `CALLBACKS_INGRESS_ADDRESSES` | the addresses the bank's ingress connects to CALLBACKS_ADDRESS from: IPv4 addresses or networks, comma separated. heeyid-callbacks takes no connection from anywhere else, and trusts X-Forwarded-For only from these | `192.0.2.5` |
+| `TAF_AUTH_URL` | TAF's (Telecom AntiFraud) OAuth 2.0 token endpoint for this zone, the full URL, from the bank's contract with TAF | `https://taf-auth.example.uz/oauth2/token` |
+| `TAF_AGENT_URL` | the TAF agent in the bank's network (its API host) for this zone: `https://<host>[:<port>]` | `https://taf-agent.example.uz` |
+| `TAF_HEALTH_URL` | the TAF agent's health, the full URL (the agent's host, port 8081, `/actuator/health`) | `https://taf-agent.example.uz:8081/actuator/health` |
+| `TAF_TRUSTED_CAS` | the CA that signed TAF's certificates for this zone (PEM; the installer asks for the file). The adapter trusts TAF only through it (SAD TB-5, pinned CA) | `~/tls/taf-ca.pem` |
+| `TAF_CLIENT_ID` | heeyID's TAF client_id (client_credentials), from the bank's contract with TAF for this zone, one per installation | `bank-client-id` |
+| `TAF_CLIENT_SECRET` 🔒 | that client's client_secret | `client-secret` |
+| `TAF_SCOPE` | the scope TAF gives that client (the token request's `scope`), from the same contract | `taf-scope` |
 | `LDAP_URL` | the bank's directory (Active Directory or another LDAP server) the consoles' people sign in with, over TLS only: `ldaps://<host>[:<port>]`. Keycloak reads people and their two groups from it, never writes; their passwords stay there | `ldaps://dc.example.com:636` |
 | `LDAP_TRUSTED_CAS` | the CA that signed the directory's certificate (PEM; the installer asks for the file) | `~/tls/directory-ca.pem` |
 | `LDAP_VENDOR` | `ad` for Active Directory, `other` for another LDAP server (OpenLDAP, 389 Directory Server, …) | `ad` |

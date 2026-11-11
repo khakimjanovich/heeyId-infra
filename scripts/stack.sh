@@ -122,7 +122,7 @@ settings() {
   vault_up
   vault_ready
   vault_tls_renew
-  render postgres valkey keycloak keycloak-config observability mailpit myid-adapter sms-adapter callbacks
+  render postgres valkey keycloak keycloak-config observability mailpit myid-adapter sms-adapter taf-adapter callbacks
   cert_list
   choices
   pull_images
@@ -188,7 +188,7 @@ cert_list() {
     [ -e "$pem" ] || continue
     name=$(openssl x509 -noout -subject -nameopt RFC2253 -in "$pem" | sed 's/.*CN=\([^,]*\).*/\1/')
     case $name in
-      myid-adapter | sms-adapter | heeyid-keycloak | vault | observability | mailpit | "heeyid unit CA") ;;
+      myid-adapter | sms-adapter | taf-adapter | heeyid-keycloak | vault | observability | mailpit | "heeyid unit CA") ;;
       *) printf '%s\n' "$callers" | grep -qxF "$name" || continue ;;
     esac
     end=$(openssl x509 -noout -enddate -in "$pem")

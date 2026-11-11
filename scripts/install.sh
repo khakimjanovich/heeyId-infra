@@ -325,7 +325,7 @@ ports() {
 images() {
   local version image
   version=$(env_local_value HEEYID_VERSION)
-  for image in myid-adapter sms-adapter; do
+  for image in myid-adapter sms-adapter taf-adapter; do
     docker image inspect "ghcr.io/khakimjanovich/$image:$version" > /dev/null 2>&1 && continue
     docker manifest inspect "ghcr.io/khakimjanovich/$image:$version" > /dev/null 2>&1 \
       || die "can't read ghcr.io/khakimjanovich/$image:$version: log in (docker login ghcr.io, a token with read:packages; the guide, section 3, step 2) or check HEEYID_VERSION"
@@ -507,7 +507,7 @@ access_postgres() {
 wave_valkey() {
   stack up valkey || die "Valkey didn't start (above): scripts/stack.sh logs valkey"
   local user password ok refused
-  for user in myid-adapter sms-adapter; do
+  for user in myid-adapter sms-adapter taf-adapter; do
     password=$(jq -r --arg k "VALKEY_$(printf '%s' "$user" | tr '[:lower:]-' '[:upper:]_')_PASSWORD" '.[$k]' .env.vault/valkey.json)
     cli() { REDISCLI_AUTH=$password scripts/stack.sh exec -T -e REDISCLI_AUTH valkey valkey-cli --user "$user" "$@" < /dev/null 2>&1; }
     ok=$(cli set "$user:install:probe" 1 EX 10)
@@ -517,7 +517,7 @@ wave_valkey() {
   done
   refused=$(scripts/stack.sh exec -T valkey valkey-cli ping < /dev/null 2>&1)
   case $refused in *NOAUTH* | *NOPERM* | *WRONGPASS*) ;; *) die "Valkey answers without a sign-in ($refused): the default user must be off (valkey/start.sh)" ;; esac
-  say "Users myid-adapter and sms-adapter write their own keys only; Valkey answers nobody without a sign-in."
+  say "Users myid-adapter, sms-adapter and taf-adapter write their own keys only; Valkey answers nobody without a sign-in."
 }
 access_valkey() {
   say "  Valkey          no published port: each service as its own ACL user (valkey/start.sh)"
@@ -532,10 +532,10 @@ wave_keycloak() {
     | ccurl --data @- "$kc/realms/services/protocol/openid-connect/token" | jq -r '.access_token // empty')
   [ -n "$token" ] || die "customer-gateway's client gets no token at $kc (realm services): scripts/stack.sh logs heeyid-keycloak keycloak-config"
   printf '%s' "$token" | cut -d. -f2 | tr '_-' '/+' | { base64 -d 2> /dev/null || true; } \
-    | jq -e '(.aud | if type == "array" then . else [.] end) as $aud | ($aud | index("myid-adapter")) and ($aud | index("sms-adapter"))
-      and (.realm_access.roles | index("myid.use")) and (.realm_access.roles | index("sms.use"))' > /dev/null 2>&1 \
-    || die "customer-gateway's token lacks the audiences myid-adapter and sms-adapter or the roles myid.use and sms.use (keycloak/services-realm.json)"
-  say "customer-gateway's client gets a token from realm services for myid-adapter and sms-adapter, with the roles myid.use and sms.use."
+    | jq -e '(.aud | if type == "array" then . else [.] end) as $aud | ($aud | index("myid-adapter")) and ($aud | index("sms-adapter")) and ($aud | index("taf-adapter"))
+      and (.realm_access.roles | index("myid.use")) and (.realm_access.roles | index("sms.use")) and (.realm_access.roles | index("taf.use"))' > /dev/null 2>&1 \
+    || die "customer-gateway's token lacks the audiences myid-adapter, sms-adapter and taf-adapter or the roles myid.use, sms.use and taf.use (keycloak/services-realm.json)"
+  say "customer-gateway's client gets a token from realm services for myid-adapter, sms-adapter and taf-adapter, with the roles myid.use, sms.use and taf.use."
   page=$(ccurl "$kc/realms/people/protocol/openid-connect/auth?client_id=grafana&response_type=code&scope=openid&redirect_uri=$(console grafana | sed 's|:|%3A|; s|/|%2F|g')%2Flogin%2Fgeneric_oauth&code_challenge=$(printf '%043d' 0)&code_challenge_method=S256")
   printf '%s' "$page" | grep -q 'name="username"' \
     || die "realm people shows no sign-in page for Grafana at $kc: keycloak-config sets its grafana client (scripts/stack.sh logs keycloak-config)"
@@ -582,7 +582,7 @@ access_observability() {
   ! mailpit_on || say "  Mailpit         $(console mailpit): heeyID's alerts, no sign-in"
 }
 
-SERVICES="myid-adapter sms-adapter"
+SERVICES="myid-adapter sms-adapter taf-adapter"
 wave_services() {
   stack up $SERVICES || die "a service didn't become healthy (above): scripts/stack.sh logs <service>"
   local service tries
@@ -607,7 +607,7 @@ wave_services() {
 }
 access_services() {
   say "  Services        $SERVICES: no sign-in. Grafana, folder heeyid, heeyID · availability"
-  say "                  shows them up, whether MyID answers, the MyID breaker and the SMS vendors' breakers"
+  say "                  shows them up, whether MyID answers, the MyID breaker, the SMS vendors' breakers and the TAF breaker"
   say "  Xabar's reports the bank's ingress passes https://<its public name>/delivery-reports/ to"
   say "                  http://$(env_local_value CALLBACKS_ADDRESS):8080 (with X-Forwarded-For); give Xabar the partner URL"
   say "                  https://<its public name>/delivery-reports/xabar/<secret>, the secret from a root token:"
