@@ -160,6 +160,10 @@ valid() {
       printf '%s' "$value" | openssl x509 -noout -checkend 0 > /dev/null || { say "That certificate has expired."; return 1; } ;;
     key)
       printf '%s' "$value" | openssl pkey -noout -passin pass: 2> /dev/null || { say "Not a PEM private key without a passphrase."; return 1; } ;;
+    service-account)
+      printf '%s' "$value" | jq -e '.type == "service_account" and (.project_id | type) == "string" and (.client_email | type) == "string"
+        and (.private_key | type) == "string" and .token_uri == "https://oauth2.googleapis.com/token"' > /dev/null 2>&1 \
+        || { say "Not a Google service account's JSON key (type service_account, project_id, client_email, private_key, token_uri)."; return 1; } ;;
     *)
       case $value in *'
 '*) say "One line only."; return 1 ;; esac
@@ -179,8 +183,8 @@ obtain() {
   printf '%s' "$spec" | jq -r '(if .suggested then "  Enter: \(.example), or type another" else "  e.g. \(.example)" end) + "   (< goes back)"' > /dev/tty
   while :; do
     case $format in
-      certificate | key)
-        ask "$name, the PEM file's path"
+      certificate | key | service-account)
+        ask "$name, the file's path"
         [ "$REPLY" != "<" ] || { BACK=1; return; }
         if [ -z "$REPLY" ] && printf '%s' "$spec" | jq -e '.empty == true' > /dev/null; then value=""
         elif [ -r "$(path "$REPLY")" ]; then value=$(cat "$(path "$REPLY")"); else say "No such file."; continue; fi ;;
@@ -219,7 +223,7 @@ review() {
   while :; do
     printf '\n\033[1mThe answers\033[0m\n' > /dev/tty
     printf '%s' "$list" | V=$VALUES jq -r '(env.V | fromjson) as $v | to_entries[] | .value as $s | ($v[$s.name] // "") as $x
-      | "  \(.key + 1). \($s.name) = \(if $x == "" then "(empty)" elif $s.secret then "••••" elif ($s.format == "certificate" or $s.format == "key") then "(PEM)" else $x end)"' > /dev/tty
+      | "  \(.key + 1). \($s.name) = \(if $x == "" then "(empty)" elif $s.secret then "••••" elif ($s.format == "certificate" or $s.format == "key") then "(PEM)" elif $s.format == "service-account" then "(JSON)" else $x end)"' > /dev/tty
     ask "A number to change, or Enter when every answer is right"
     [ -n "$REPLY" ] || return 0
     case $REPLY in
@@ -325,7 +329,7 @@ ports() {
 images() {
   local version image
   version=$(env_local_value HEEYID_VERSION)
-  for image in myid-adapter sms-adapter taf-adapter; do
+  for image in myid-adapter sms-adapter taf-adapter push-adapter; do
     docker image inspect "ghcr.io/khakimjanovich/$image:$version" > /dev/null 2>&1 && continue
     docker manifest inspect "ghcr.io/khakimjanovich/$image:$version" > /dev/null 2>&1 \
       || die "can't read ghcr.io/khakimjanovich/$image:$version: log in (docker login ghcr.io, a token with read:packages; the guide, section 3, step 2) or check HEEYID_VERSION"
@@ -536,6 +540,14 @@ wave_keycloak() {
       and (.realm_access.roles | index("myid.use")) and (.realm_access.roles | index("sms.use")) and (.realm_access.roles | index("taf.use"))' > /dev/null 2>&1 \
     || die "customer-gateway's token lacks the audiences myid-adapter, sms-adapter and taf-adapter or the roles myid.use, sms.use and taf.use (keycloak/services-realm.json)"
   say "customer-gateway's client gets a token from realm services for myid-adapter, sms-adapter and taf-adapter, with the roles myid.use, sms.use and taf.use."
+  token=$(jq -r '"grant_type=client_credentials&client_id=workers&client_secret=\(.WORKERS_CLIENT_SECRET)"' .env.vault/keycloak-config.json \
+    | ccurl --data @- "$kc/realms/services/protocol/openid-connect/token" | jq -r '.access_token // empty')
+  [ -n "$token" ] || die "workers' client gets no token at $kc (realm services): scripts/stack.sh logs heeyid-keycloak keycloak-config"
+  printf '%s' "$token" | cut -d. -f2 | tr '_-' '/+' | { base64 -d 2> /dev/null || true; } \
+    | jq -e '(.aud | if type == "array" then . else [.] end) as $aud | ($aud | index("myid-adapter")) and ($aud | index("push-adapter"))
+      and (.realm_access.roles | index("myid.use")) and (.realm_access.roles | index("push.use"))' > /dev/null 2>&1 \
+    || die "workers' token lacks the audiences myid-adapter and push-adapter or the roles myid.use and push.use (keycloak/services-realm.json)"
+  say "workers' client gets a token from realm services for myid-adapter and push-adapter, with the roles myid.use and push.use."
   page=$(ccurl "$kc/realms/people/protocol/openid-connect/auth?client_id=grafana&response_type=code&scope=openid&redirect_uri=$(console grafana | sed 's|:|%3A|; s|/|%2F|g')%2Flogin%2Fgeneric_oauth&code_challenge=$(printf '%043d' 0)&code_challenge_method=S256")
   printf '%s' "$page" | grep -q 'name="username"' \
     || die "realm people shows no sign-in page for Grafana at $kc: keycloak-config sets its grafana client (scripts/stack.sh logs keycloak-config)"
@@ -582,7 +594,7 @@ access_observability() {
   ! mailpit_on || say "  Mailpit         $(console mailpit): heeyID's alerts, no sign-in"
 }
 
-SERVICES="myid-adapter sms-adapter taf-adapter"
+SERVICES="myid-adapter sms-adapter taf-adapter push-adapter"
 wave_services() {
   stack up $SERVICES || die "a service didn't become healthy (above): scripts/stack.sh logs <service>"
   local service tries
@@ -607,7 +619,7 @@ wave_services() {
 }
 access_services() {
   say "  Services        $SERVICES: no sign-in. Grafana, folder heeyid, heeyID · availability"
-  say "                  shows them up, whether MyID answers, the MyID breaker, the SMS vendors' breakers and the TAF breaker"
+  say "                  shows them up, whether MyID answers, the MyID breaker, the SMS vendors' breakers, the TAF breaker and the FCM breaker"
   say "  Xabar's reports the bank's ingress passes https://<its public name>/delivery-reports/ to"
   say "                  http://$(env_local_value CALLBACKS_ADDRESS):8080 (with X-Forwarded-For); give Xabar the partner URL"
   say "                  https://<its public name>/delivery-reports/xabar/<secret>, the secret from a root token:"

@@ -156,6 +156,43 @@ groups:
               expression: B
               conditions:
                 - evaluator: {type: gt, params: [0]}
+      - uid: heeyid-push-breaker-open
+        title: FCM breaker open
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "push-adapter's breaker is open"
+          description: "FCM failed 5 times in a row (SAD §8): the adapter answers PUSH_ADAPTER_SERVICE_UNAVAILABLE without a call to FCM until a probe each 30 s gets an answer; no push message reaches a customer. Check FCM's status (status.firebase.google.com), the route to fcm.googleapis.com and oauth2.googleapis.com (egress), and the service-account key (FCM_SERVICE_ACCOUNT)."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 120, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'max by (service_name) (last_over_time(push_fcm_breaker_open{service_name="push-adapter"}[2m]))'
+              instant: true
+              queryType: instant
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings: {mode: dropNN}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
       - uid: heeyid-myid-refused
         title: MyID refuses the adapter
         condition: C
@@ -210,7 +247,7 @@ groups:
             datasourceUid: loki
             model:
               refId: A
-              expr: 'sum by (service_name) (count_over_time({service_name=~"myid-adapter|sms-adapter|taf-adapter"} |~ "✗ [0-9]+ [A-Z][A-Z0-9_]*_UNAVAILABLE " [5m]))'
+              expr: 'sum by (service_name) (count_over_time({service_name=~"myid-adapter|sms-adapter|taf-adapter|push-adapter"} |~ "✗ [0-9]+ [A-Z][A-Z0-9_]*_UNAVAILABLE " [5m]))'
               instant: true
               queryType: instant
               editorMode: code
@@ -284,7 +321,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: 'max by (service_name, component) (last_over_time(platform_health_up{service_name=~"myid-adapter|sms-adapter|taf-adapter"}[2m]) == bool 0)'
+              expr: 'max by (service_name, component) (last_over_time(platform_health_up{service_name=~"myid-adapter|sms-adapter|taf-adapter|push-adapter"}[2m]) == bool 0)'
               instant: true
               queryType: instant
               editorMode: code
@@ -321,7 +358,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: 'absent_over_time(jvm_classes_loaded{service_name="myid-adapter"}[2m]) or absent_over_time(jvm_classes_loaded{service_name="sms-adapter"}[2m]) or absent_over_time(jvm_classes_loaded{service_name="taf-adapter"}[2m])'
+              expr: 'absent_over_time(jvm_classes_loaded{service_name="myid-adapter"}[2m]) or absent_over_time(jvm_classes_loaded{service_name="sms-adapter"}[2m]) or absent_over_time(jvm_classes_loaded{service_name="taf-adapter"}[2m]) or absent_over_time(jvm_classes_loaded{service_name="push-adapter"}[2m])'
               instant: true
               queryType: instant
               editorMode: code

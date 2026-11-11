@@ -45,6 +45,8 @@ Change a value, with a root token ([vault.md](vault.md)): `v kv patch secret/inp
 | `TAF_CLIENT_ID` | heeyID's TAF client_id (client_credentials), from the bank's contract with TAF for this zone, one per installation | `bank-client-id` |
 | `TAF_CLIENT_SECRET` 🔒 | that client's client_secret | `client-secret` |
 | `TAF_SCOPE` | the scope TAF gives that client (the token request's `scope`), from the same contract | `taf-scope` |
+| `FCM_PROJECT_ID` | the bank's Firebase project for this zone (its project ID, as Firebase's console shows it): the push adapter sends through it only | `bank-heeyid-prod` |
+| `FCM_SERVICE_ACCOUNT` 🔒 | the JSON key of that project's service account with role `roles/firebasecloudmessaging.admin` (the installer asks for the file; docs/install-server.md, "The FCM credential"). Only the push adapter gets it, as a file | `~/tls/fcm-service-account.json` |
 | `LDAP_URL` | the bank's directory (Active Directory or another LDAP server) the consoles' people sign in with, over TLS only: `ldaps://<host>[:<port>]`. Keycloak reads people and their two groups from it, never writes; their passwords stay there | `ldaps://dc.example.com:636` |
 | `LDAP_TRUSTED_CAS` | the CA that signed the directory's certificate (PEM; the installer asks for the file) | `~/tls/directory-ca.pem` |
 | `LDAP_VENDOR` | `ad` for Active Directory, `other` for another LDAP server (OpenLDAP, 389 Directory Server, …) | `ad` |

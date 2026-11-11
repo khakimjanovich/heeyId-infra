@@ -15,6 +15,10 @@
       {
         "name": "taf.use",
         "description": "calls the TAF adapter (taf-adapter-api)"
+      },
+      {
+        "name": "push.use",
+        "description": "calls the push adapter (push-adapter-api)"
       }
     ]
   },
@@ -62,7 +66,7 @@
     },
     {
       "clientId": "workers",
-      "name": "workers (lost code), calling the MyID adapter",
+      "name": "workers (lost code, push messages), calling the MyID and push adapters",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -75,6 +79,16 @@
           "protocolMapper": "oidc-audience-mapper",
           "config": {
             "included.custom.audience": "myid-adapter",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience push-adapter",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "push-adapter",
             "access.token.claim": "true",
             "id.token.claim": "false"
           }
@@ -98,7 +112,8 @@
       "enabled": true,
       "serviceAccountClientId": "workers",
       "realmRoles": [
-        "myid.use"
+        "myid.use",
+        "push.use"
       ]
     }
   ]
