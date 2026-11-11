@@ -24,7 +24,7 @@ For now it runs the MyID, SMS, TAF and push adapters, with their stores, sign-in
 ## The MyID adapter
 
 - **Callers:** a client certificate from heeyID's CA (role `callers`) and a token of realm `services` with the audience `myid-adapter` and the role `myid.use`. `customer-gateway` and `workers` hold both in `keycloak/services-realm.json`; their client secrets are in `secret/env/keycloak-config`.
-- **MyID:** `MYID_BASE_URL` and `MYID_MEDIA_URL`, the zone's hosts, over HTTPS. Its one credential (SAD v3.2 C-1) from `secret/input/heeyid` (`MYID_CLIENT_ID`, `MYID_CLIENT_SECRET`, `MYID_USERNAME`, `MYID_PASSWORD`). Timeouts 2 s to connect, 35 s to read (MyID answers a result in up to 30 s). The breaker opens after 5 failures in a row and probes each 30 s (SAD §8).
+- **MyID:** `MYID_BASE_URL` and `MYID_MEDIA_URL`, the zone's hosts, over HTTPS. Its one credential (SAD C-13) from `secret/input/heeyid` (`MYID_CLIENT_ID`, `MYID_CLIENT_SECRET`, `MYID_USERNAME`, `MYID_PASSWORD`). Timeouts 2 s to connect, 35 s to read (MyID answers a result in up to 30 s). The breaker opens after 5 failures in a row and probes each 30 s (SAD §8).
 - **Tokens:** in Valkey, shared by every instance, until 5 minutes before MyID's expiry.
 - **Health:** `/actuator/health` on port 8193 (plain HTTP, inside the network), Valkey included.
 
