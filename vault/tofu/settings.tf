@@ -4,8 +4,8 @@
 #   - generated here and written to both sides that must agree: passwords, client secrets, each
 #     service's certificate (renewed by apply in its last 30 days);
 #   - the environment's: what only its operator knows (MyID's hosts, the bank's collectors, mail, the
-#     directory), read from secret/input/heeyid, which scripts/install.sh writes (docs/settings.md,
-#     "Settings"), the MyID credential among them. A key missing there stops plan.
+#     directory, Xabar's login and addresses), read from secret/input/heeyid, which scripts/install.sh
+#     writes (docs/settings.md, "Settings"), the MyID credential among them. A key missing there stops plan.
 # Rotating a generated value: `tofu apply -replace=<resource>`, then deploy.
 
 data "vault_kv_secret_v2" "input" {
@@ -23,10 +23,10 @@ locals {
     OTLP_LOGS_ENDPOINT    = "http://observability:4318/v1/logs"
   }
   # heeyID's services, each with its certificate from heeyID's CA (role heeyid-service).
-  services        = toset(["myid-adapter"])
+  services        = toset(["myid-adapter", "sms-adapter"])
   internal_domain = "heeyid.internal"
-  # The MyID adapter's callers: heeyID's own clients in realm services (keycloak/services-realm.json),
-  # each with the role myid.use and the audience myid-adapter. Their deployables come later; their
+  # The adapters' callers: heeyID's own clients in realm services (keycloak/services-realm.json), each
+  # with the roles and audiences of the adapters it calls. Their deployables come later; their
   # client secrets are generated now (secret/env/keycloak-config), their certificates come from role
   # callers.
   callers = toset(["customer-gateway", "workers"])
@@ -38,12 +38,14 @@ locals {
     "heeyid-keycloak" = ["keycloak.${var.consoles_domain}"]
     "mailpit"         = ["mailpit.${var.consoles_domain}"]
   }
+  # An IPv4 address or network, as heeyid-callbacks takes them.
+  address = "[0-9]{1,3}([.][0-9]{1,3}){3}(/[0-9]{1,2})?"
   # The ship settings: an empty endpoint ships nothing of that kind.
   shipping = local.input["LOG_SHIP_PROTOCOL"] != "off" || local.input["METRICS_SHIP_ENDPOINT"] != "" || local.input["TRACES_SHIP_ENDPOINT"] != ""
 }
 
 resource "random_password" "this" {
-  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter"])
+  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter", "valkey-sms-adapter"])
   length   = 32
   special  = false # values go into env files and JDBC URLs unquoted
 }
@@ -51,6 +53,13 @@ resource "random_password" "this" {
 # The AES-256 key of the MyID tokens in Valkey (SAD TB-5: cached in Valkey only encrypted).
 resource "random_bytes" "myid_token_key" {
   length = 32
+}
+
+# The secret in the partner URL given to Xabar (/delivery-reports/xabar/<secret>/status): URL-safe,
+# 32 to 128 characters (the adapter's rule).
+resource "random_password" "xabar_callback_secret" {
+  length  = 48
+  special = false
 }
 
 resource "random_password" "caller" {
@@ -141,6 +150,7 @@ resource "vault_kv_secret_v2" "valkey" {
   name  = "env/valkey"
   data_json = jsonencode({
     VALKEY_MYID_ADAPTER_PASSWORD = random_password.this["valkey-myid-adapter"].result
+    VALKEY_SMS_ADAPTER_PASSWORD  = random_password.this["valkey-sms-adapter"].result
   })
 }
 
@@ -304,6 +314,58 @@ resource "vault_kv_secret_v2" "myid_adapter" {
     precondition {
       condition     = alltrue([for k in ["MYID_BASE_URL", "MYID_MEDIA_URL"] : can(regex("^https://[a-z0-9.-]+(:[0-9]+)?$", local.input[k]))])
       error_message = "MYID_BASE_URL, MYID_MEDIA_URL: https://<host>[:<port>], MyID's hosts for this zone, no path."
+    }
+  }
+}
+
+resource "vault_kv_secret_v2" "sms_adapter" {
+  mount = vault_mount.secret.path
+  name  = "env/sms-adapter"
+  data_json = jsonencode(merge(local.otlp, {
+    SMS_ADAPTER_PORT            = "8094"
+    SMS_ADAPTER_MANAGEMENT_PORT = "8194"
+    # Xabar's delivery reports, plain HTTP, only from heeyid-callbacks (the bank's ingress behind it).
+    SMS_ADAPTER_CALLBACK_PORT   = "8294"
+    SMS_ADAPTER_SSL_CERTIFICATE = vault_pki_secret_backend_cert.this["sms-adapter"].certificate
+    SMS_ADAPTER_SSL_PRIVATE_KEY = vault_pki_secret_backend_cert.this["sms-adapter"].private_key
+    SMS_ADAPTER_SSL_TRUSTED_CAS = vault_pki_secret_backend_cert.this["sms-adapter"].issuing_ca
+    SMS_ADAPTER_ISSUER_URI      = local.issuer
+    SMS_ADAPTER_AUDIENCE        = "sms-adapter"
+    SMS_ACTIVE_VENDOR           = "xabar"
+    SMS_FAILOVER_VENDORS        = "" # none yet
+    SMS_MESSAGE_ID_PREFIX       = "hid"
+    SMS_RETENTION               = "7d"
+    # SAD §8: each vendor's breaker opens after 5 failures in a row and probes each 30 s.
+    SMS_BREAKER_FAILURES    = "5"
+    SMS_BREAKER_PROBE_AFTER = "30s"
+    XABAR_BASE_URL          = "https://send.smsxabar.uz/broker-api"
+    XABAR_CONNECT_TIMEOUT   = "2s"
+    XABAR_READ_TIMEOUT      = "10s"
+    XABAR_USERNAME          = local.input["XABAR_USERNAME"]
+    XABAR_PASSWORD          = local.input["XABAR_PASSWORD"]
+    XABAR_ORIGINATOR        = local.input["XABAR_ORIGINATOR"]
+    XABAR_CALLBACK_SECRET   = random_password.xabar_callback_secret.result
+    VALKEY_HOST             = "valkey"
+    VALKEY_PORT             = "6379"
+    VALKEY_USERNAME         = "sms-adapter"
+    VALKEY_PASSWORD         = random_password.this["valkey-sms-adapter"].result
+  }))
+}
+
+# heeyid-callbacks (callbacks/start.sh): the door of Xabar's delivery reports. It takes a connection
+# only from the bank's ingress, and a request only for an address of Xabar's, as the ingress names it
+# in X-Forwarded-For.
+resource "vault_kv_secret_v2" "callbacks" {
+  mount = vault_mount.secret.path
+  name  = "env/callbacks"
+  data_json = jsonencode({
+    CALLBACKS_INGRESS_ADDRESSES = local.input["CALLBACKS_INGRESS_ADDRESSES"]
+    XABAR_ADDRESSES             = local.input["XABAR_ADDRESSES"]
+  })
+  lifecycle {
+    precondition {
+      condition     = alltrue([for k in ["CALLBACKS_INGRESS_ADDRESSES", "XABAR_ADDRESSES"] : can(regex("^${local.address}(,${local.address})*$", local.input[k]))])
+      error_message = "CALLBACKS_INGRESS_ADDRESSES, XABAR_ADDRESSES: IPv4 addresses or networks (a.b.c.d or a.b.c.d/n), comma separated, no spaces."
     }
   }
 }

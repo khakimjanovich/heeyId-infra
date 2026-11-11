@@ -35,9 +35,9 @@ receivers:
         to: body
       - type: remove
         field: attributes.attrs
-      # The MyID adapter sends its lines over OTLP already (masked): not its console copy.
+      # The adapters send their lines over OTLP already (masked): not their console copy.
       - type: filter
-        expr: 'resource["service.name"] matches "^heeyid-myid-adapter-[0-9]+$"'
+        expr: 'resource["service.name"] matches "^heeyid-(myid|sms)-adapter-[0-9]+$"'
   # Vault's audit device (vault/tofu/main.tf), with the files it was rotated to (vault/audit-rotate.sh).
   filelog/vault-audit:
     include: [/vault-audit/audit.log*]

@@ -15,6 +15,7 @@ x-healthcheck: &healthcheck
 networks:
   default:
   consoles:
+  callbacks: # heeyid-callbacks and the adapters it passes vendors' reports to, nothing else
   vault:
     name: heeyid-vault
     external: true
@@ -211,6 +212,44 @@ services:
       <<: *healthcheck
       retries: 60
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/$${MYID_ADAPTER_MANAGEMENT_PORT} && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+
+  sms-adapter:
+    profiles: [apps]
+    image: ghcr.io/khakimjanovich/sms-adapter:${HEEYID_VERSION:?HEEYID_VERSION is required}
+    logging: *logging
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 512M } } }
+    env_file: [{ path: .env.vault/sms-adapter.env, required: true }]
+    networks: [default, callbacks]
+    depends_on:
+      observability: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      retries: 60
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/$${SMS_ADAPTER_MANAGEMENT_PORT} && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+
+  # The door of the vendors' delivery reports, CALLBACKS_ADDRESS:8080, plain HTTP behind the bank's
+  # ingress (which ends TLS): only POST /delivery-reports/xabar/<secret>/status, only from the ingress,
+  # only for Xabar's addresses (callbacks/nginx.conf). Its one upstream is the SMS adapter's callback
+  # port; the adapter checks the secret.
+  heeyid-callbacks:
+    profiles: [apps]
+    init: true
+    image: nginxinc/nginx-unprivileged:1.29.2-alpine
+    logging: *logging
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 128M } } }
+    entrypoint: ["/bin/sh", "/start.sh"]
+    ports: ["${CALLBACKS_ADDRESS:?CALLBACKS_ADDRESS is required}:8080:8080"]
+    networks: [callbacks]
+    env_file: [{ path: .env.vault/callbacks.env, required: true }] # rendered from Vault, secret/env/callbacks
+    volumes:
+      - ./callbacks/start.sh:/start.sh:ro
+      - ./callbacks/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
 
 volumes:
   postgres-data:
