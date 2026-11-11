@@ -43,9 +43,10 @@ jobs:
           for name in $(grep -ho '\.env\.vault/[a-z-]*\.env' docker-compose.yml vault/docker-compose.yml | sort -u); do : > "$name"; done
           for file in docker-compose.yml vault/docker-compose.yml; do docker compose -f "$file" config --quiet; done
       - name: The OpenTofu configuration is valid
-        working-directory: vault/tofu
         run: |
-          command -v tofu > /dev/null || { echo "tofu is missing on this runner: install OpenTofu 1.10.6 (brew install opentofu)" >&2; exit 1; }
-          tofu fmt -check -recursive
-          tofu init -backend=false -input=false
-          tofu validate
+          command -v docker > /dev/null || { echo "docker is missing on this runner: install Docker" >&2; exit 1; }
+          # the image scripts/helpers.sh runs OpenTofu in, as this user so the files it leaves can be removed
+          for args in "fmt -check -recursive" "init -backend=false -input=false" "validate"; do
+            docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/vault:/vault-config" -w /vault-config/tofu \
+              ghcr.io/opentofu/opentofu:1.10.6 $args
+          done
