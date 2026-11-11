@@ -31,6 +31,9 @@ jobs:
       - name: The Compose files are valid
         run: |
           command -v docker > /dev/null || { echo "docker is missing on this runner: install Docker" >&2; exit 1; }
+          # the runner keeps its own Docker config, which lacks the Compose plugin: look in the user's plugins too
+          export DOCKER_CLI_PLUGIN_EXTRA_DIRS="$HOME/.docker/cli-plugins"
+          docker compose version > /dev/null || { echo "the Docker Compose plugin is missing on this runner: install Docker Compose v2" >&2; exit 1; }
           # placeholder values, for this step only: the files demand them, and config reads no secret
           export LOG_MAX_SIZE=1m LOG_MAX_FILES=1 CONSOLES_DOMAIN=example.test CONSOLES_ADDRESS=127.0.0.1 \
             CALLBACKS_ADDRESS=127.0.0.1 HEEYID_VERSION=0 VAULT_AUDIT_MAX_MB=1 VAULT_AUDIT_KEEP=1 DOCKER_ROOT_DIR=/var/lib/docker
