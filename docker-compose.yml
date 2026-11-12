@@ -66,6 +66,38 @@ services:
       <<: *healthcheck
       test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$VALKEY_MYID_ADAPTER_PASSWORD\" valkey-cli --user myid-adapter ping | grep -q PONG"]
 
+  # One Kafka node (KRaft). Each module's outbox relay writes its own topic <module>.events and the topic
+  # audit as its own SCRAM user; only user audit reads audit (kafka/start.sh, kafka/init.sh).
+  kafka:
+    image: apache/kafka:4.3.1
+    logging: *logging
+    restart: unless-stopped
+    deploy: { resources: { limits: { memory: 1G } } }
+    entrypoint: ["/bin/sh", "/heeyid/start.sh"]
+    env_file: [{ path: .env.vault/kafka.env, required: true }] # rendered from Vault, secret/env/kafka
+    volumes:
+      - ./kafka/start.sh:/heeyid/start.sh:ro
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      <<: *healthcheck
+      interval: 30s # each check starts a JVM
+      timeout: 20s
+      start_period: 120s
+      start_interval: 3s
+      test: ["CMD-SHELL", "KAFKA_HEAP_OPTS=-Xmx64m /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 --command-config /tmp/admin.properties > /dev/null"]
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    logging: *logging
+    entrypoint: ["/bin/sh", "/heeyid/init.sh"]
+    env_file: [{ path: .env.vault/kafka.env, required: true }] # rendered from Vault, secret/env/kafka
+    environment:
+      KAFKA_HEAP_OPTS: -Xmx128m
+    volumes: ["./kafka/init.sh:/heeyid/init.sh:ro"]
+    depends_on:
+      kafka: { condition: service_healthy }
+    restart: "no"
+
   heeyid-keycloak:
     image: quay.io/keycloak/keycloak:26.4.0
     logging: *logging
@@ -289,6 +321,7 @@ services:
 volumes:
   postgres-data:
   valkey-data:
+  kafka-data:
   observability-data:
   vault-audit:
     name: heeyid_vault-audit

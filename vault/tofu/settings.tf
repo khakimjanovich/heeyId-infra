@@ -39,6 +39,14 @@ locals {
     "heeyid-keycloak" = ["keycloak.${var.consoles_domain}"]
     "mailpit"         = ["mailpit.${var.consoles_domain}"]
   }
+  # The gateways' modules, each with its own Kafka user (kafka/init.sh), and the modules each
+  # deployable loads: it gets those users' settings only.
+  modules = ["access", "customer", "grants", "antifraud", "notification", "catalogue", "staff", "audit"]
+  kafka_apps = {
+    "customer-gw" = ["access", "customer", "grants", "antifraud", "notification", "catalogue"]
+    "admin-gw"    = ["customer", "staff", "grants", "notification", "antifraud", "catalogue"]
+    "workers"     = local.modules
+  }
   # An IPv4 address or network, as heeyid-callbacks takes them.
   address = "[0-9]{1,3}([.][0-9]{1,3}){3}(/[0-9]{1,2})?"
   # The ship settings: an empty endpoint ships nothing of that kind.
@@ -196,6 +204,39 @@ resource "vault_kv_secret_v2" "valkey" {
     VALKEY_ADMIN_GW_PASSWORD     = random_password.this["valkey-admin-gw"].result
     VALKEY_WORKERS_PASSWORD      = random_password.this["valkey-workers"].result
   })
+}
+
+resource "random_password" "kafka" {
+  for_each = toset(concat(["admin"], local.modules))
+  length   = 32
+  special  = false # values go into properties files unquoted
+}
+
+# Kafka: user admin (PLAIN) for the node and kafka-init, and one SCRAM user per module, which writes
+# only its topic <module>.events and audit; only user audit reads audit (kafka/init.sh).
+resource "vault_kv_secret_v2" "kafka" {
+  mount     = vault_mount.secret.path
+  name      = "env/kafka"
+  data_json = jsonencode({ for u, p in random_password.kafka : "KAFKA_${upper(u)}_PASSWORD" => p.result })
+}
+
+# Each deployable's Kafka settings, apart from its other settings: one user per module it loads.
+resource "vault_kv_secret_v2" "kafka_app" {
+  for_each = local.kafka_apps
+  mount    = vault_mount.secret.path
+  name     = "env/${each.key}-kafka"
+  data_json = jsonencode(merge(
+    {
+      HEEYID_KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
+      HEEYID_KAFKA_SECURITY_PROTOCOL = "SASL_PLAINTEXT"
+      HEEYID_KAFKA_SASL_MECHANISM    = "SCRAM-SHA-512"
+      HEEYID_KAFKA_AUDIT_TOPIC       = "audit"
+    },
+    { for m in each.value : "HEEYID_KAFKA_${upper(m)}_USERNAME" => m },
+    { for m in each.value : "HEEYID_KAFKA_${upper(m)}_PASSWORD" => random_password.kafka[m].result },
+    { for m in each.value : "HEEYID_KAFKA_${upper(m)}_TOPIC" => "${m}.events" if m != "audit" },
+    contains(each.value, "audit") ? { HEEYID_KAFKA_AUDIT_GROUP = "audit" } : {},
+  ))
 }
 
 resource "vault_kv_secret_v2" "keycloak" {
