@@ -2,7 +2,7 @@
 
 heeyID on one host with Docker Compose: two projects, `heeyid-vault` (Vault alone, started first) and `heeyid` (everything else). Design: SAD MVP 1 §6 (deployment), §7.2 (key custody), §8 (the MyID, SMS, TAF and push adapters), ADR-36 (the push adapter).
 
-For now it runs the MyID, SMS, TAF and push adapters, with their stores, sign-in and observability. The gateways, the workers, Kafka and their databases come with them; the realm `services` and the CA already name the adapters' callers, `customer-gateway` and `workers`.
+For now it runs the MyID, SMS, TAF and push adapters, with their stores, sign-in and observability. Kafka is ready for the gateways and the workers, which come with their databases; the realm `services` and the CA already name the adapters' callers, `customer-gateway` and `workers`.
 
 ## What runs
 
@@ -10,6 +10,7 @@ For now it runs the MyID, SMS, TAF and push adapters, with their stores, sign-in
 |---|---|---|
 | `vault` (`heeyid-vault`) | settings and secrets, heeyID's CA | the consoles' door (`vault.<CONSOLES_DOMAIN>`), the installer |
 | `postgres`, `postgres-init` | Keycloak's database; database `heeyid` with one schema and one user for each module | Keycloak; the gateways and the workers when they come |
+| `kafka`, `kafka-init` | one KRaft node, SASL only, ACLs on, no topic made by a client: a topic `<module>.events` for each module's outbox (3 partitions, 7 days) and `audit` (1 partition, one order for the audit chain, kept without a time limit: the chain in Postgres is the record, Kafka the transport); one SCRAM user `<module>_user` per module, which writes its own topic and `audit`; inside heeyID only `audit_user` reads `audit`, in group `audit` ([`kafka/init.sh`](../kafka/init.sh)). See [Kafka](#kafka). | the gateways and the workers at `kafka:9092`, each module as its own user (`secret/env/<app>-kafka`) |
 | `valkey` | the MyID adapter's tokens (keys `myid-adapter:*`, encrypted); the SMS adapter's idempotency keys and message statuses (keys `sms-adapter:key:*`, `sms-adapter:message:*`, no text and no phone number); the TAF adapter's token (key `taf-adapter:token`, encrypted); one ACL user per service, append-only file each second | the MyID adapter (user `myid-adapter`), the SMS adapter (user `sms-adapter`), the TAF adapter (user `taf-adapter`) |
 | `heeyid-keycloak`, `keycloak-config` | realm `services` (services' tokens), realm `people` (the consoles' people, from the bank's directory) | services at `https://heeyid-keycloak:8443`, people through the consoles' door |
 | `observability` | Grafana, Loki, Prometheus, Tempo, the collector; alerts by mail | Grafana through the consoles' door |
@@ -52,6 +53,13 @@ For now it runs the MyID, SMS, TAF and push adapters, with their stores, sign-in
 - **Ports:** 8096 the API (mutual TLS), 8196 health (`/actuator/health`, plain HTTP, inside the network).
 - **Egress:** `fcm.googleapis.com:443` (FCM HTTP v1) and `oauth2.googleapis.com:443` (the service account's tokens). Only the push adapter calls them.
 
+## Kafka
+
+- **Readers:** nobody reads `<module>.events` in MVP 1. No module reads another module's events: a module asks the owner synchronously, and the relay makes the calls after a commit. The relay writes these topics for later readers. The bank's reader of a public "identity verified" topic comes with its own later ticket, with its own topic and user.
+- **No lost event:** a module's outbox row stays until the relay has the broker's ack (`acks=all`). Topic `audit` has no time limit (`retention.ms=-1`): time never drops an event the audit module has not read. The chain in Postgres is the record; Kafka is the transport.
+- **Bank monitoring:** The bank monitoring reader of `audit` (mTLS listener outside the Compose network, read-only user and ACL, own consumer group) comes with ticket HID-49, before the acceptance run. `audit` keeps retention -1, so it holds for both readers.
+- **Sign-in:** SASL_PLAINTEXT, user `admin` with PLAIN and the modules with SCRAM-SHA-512, as in ecom-infra: Kafka is only on the internal Compose network and publishes no port. TLS comes with the bank's network rules.
+
 ## Networks
 
 | Network | Who |
@@ -65,7 +73,7 @@ Only two doors publish a port: the consoles' door (`CONSOLES_ADDRESS:443`) and t
 
 ## Start order
 
-`scripts/stack.sh up`: Vault up and unsealed, its certificate renewed, every setting rendered from Vault to `.env.vault/`, the images pulled, then Compose with each service waiting for what it needs (`depends_on`): Postgres → Keycloak → keycloak-config; Valkey and observability → myid-adapter, sms-adapter, taf-adapter; observability → push-adapter.
+`scripts/stack.sh up`: Vault up and unsealed, its certificate renewed, every setting rendered from Vault to `.env.vault/`, the images pulled, then Compose with each service waiting for what it needs (`depends_on`): Postgres → Keycloak → keycloak-config; Kafka → kafka-init; Valkey and observability → myid-adapter, sms-adapter, taf-adapter; observability → push-adapter.
 
 ## Observability
 

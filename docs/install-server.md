@@ -16,11 +16,11 @@ git clone https://github.com/khakimjanovich/heeyId-infra.git && cd heeyId-infra
 scripts/install.sh
 ```
 
-Seven waves ([vault.md](vault.md), "Installer waves"); each proves its part, prints how to get in, and waits for `ok`. A stop goes on from the same wave when run again.
+Eight waves ([vault.md](vault.md), "Installer waves"); each proves its part, prints how to get in, and waits for `ok`. A stop goes on from the same wave when run again.
 
 ### Xabar's delivery reports
 
-After wave 7, give Xabar the partner URL `https://<the ingress's public name>/delivery-reports/xabar/<secret>` (Xabar adds `/status`). The secret, with a root token: `v kv get -field=XABAR_CALLBACK_SECRET secret/env/sms-adapter`. Send it to Xabar by a protected channel. Ask Xabar for its status words and for any callback authentication: its document lists neither.
+After wave 8, give Xabar the partner URL `https://<the ingress's public name>/delivery-reports/xabar/<secret>` (Xabar adds `/status`). The secret, with a root token: `v kv get -field=XABAR_CALLBACK_SECRET secret/env/sms-adapter`. Send it to Xabar by a protected channel. Ask Xabar for its status words and for any callback authentication: its document lists neither.
 
 ### The FCM credential
 

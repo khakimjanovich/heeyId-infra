@@ -122,7 +122,7 @@ settings() {
   vault_up
   vault_ready
   vault_tls_renew
-  render postgres valkey keycloak keycloak-config observability mailpit myid-adapter sms-adapter taf-adapter push-adapter callbacks
+  render postgres valkey kafka customer-gw-kafka admin-gw-kafka workers-kafka keycloak keycloak-config observability mailpit myid-adapter sms-adapter taf-adapter push-adapter callbacks
   cert_list
   choices
   pull_images
@@ -136,6 +136,7 @@ up() {
     return
   fi
   wait_up $profiles
+  start kafka-init # no service waits for it yet: run it to its end here
   wait_up $profiles --profile apps
 }
 
