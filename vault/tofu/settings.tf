@@ -43,7 +43,7 @@ locals {
   address = "[0-9]{1,3}([.][0-9]{1,3}){3}(/[0-9]{1,2})?"
   # The ship settings: an empty endpoint ships nothing of that kind.
   shipping = local.input["LOG_SHIP_PROTOCOL"] != "off" || local.input["METRICS_SHIP_ENDPOINT"] != "" || local.input["TRACES_SHIP_ENDPOINT"] != ""
-  # Database heeyid: one schema and one user for each module (postgres/init.sql), and the Hikari pool
+  # Database heeyid: one schema and one user <module>_user for each module (postgres/init.sql), and the Hikari pool
   # size of each module in each app that loads it. An app loads a module when it serves it or calls it
   # in-process.
   db_modules = ["access", "customer", "grants", "antifraud", "notification", "catalogue", "staff", "audit"]
@@ -177,7 +177,7 @@ resource "vault_kv_secret_v2" "db" {
   name     = "env/${each.key}-db"
   data_json = jsonencode(merge([for m, size in each.value : {
     "HEEYID_DB_${upper(m)}_URL"       = "jdbc:postgresql://postgres:5432/heeyid"
-    "HEEYID_DB_${upper(m)}_USERNAME"  = m
+    "HEEYID_DB_${upper(m)}_USERNAME"  = "${m}_user"
     "HEEYID_DB_${upper(m)}_PASSWORD"  = random_password.db[m].result
     "HEEYID_DB_${upper(m)}_POOL_SIZE" = tostring(size)
   }]...))

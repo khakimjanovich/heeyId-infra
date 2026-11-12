@@ -4,7 +4,6 @@
 set -eu
 export PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 exec psql -h postgres -U heeyid_admin -d heeyid -f /sql/init.sql \
-  -v modules="access customer grants antifraud notification catalogue staff audit" \
   -v keycloak_password="${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD is required}" \
   -v access_password="${HEEYID_DB_ACCESS_PASSWORD:?HEEYID_DB_ACCESS_PASSWORD is required}" \
   -v customer_password="${HEEYID_DB_CUSTOMER_PASSWORD:?HEEYID_DB_CUSTOMER_PASSWORD is required}" \

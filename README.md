@@ -29,6 +29,8 @@ scripts/stack.sh up                      # start an installed stack
 
 One customer-gw: 35 + 13 + 16 + 30 = 94 of 200. Two customer-gw: 129 of 200, 71 left for the superuser's 3 reserved, `postgres-init`, a break-glass `psql` and `heeyid_viewer`. Add a pool or an instance only with this count.
 
+`audit_user` owns schema `audit`, so the database alone does not stop it from changing `audit_event`: the audit module's migration adds the trigger that refuses UPDATE and DELETE there.
+
 ## Docs
 
 | | |
