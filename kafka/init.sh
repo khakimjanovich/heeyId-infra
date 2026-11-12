@@ -35,13 +35,16 @@ user() {
   rm /tmp/scram.properties
 }
 
-# 7 days for a module's events. audit keeps 14, for the audit module to catch up after a long stop, in one
-# partition: the audit chain reads every module's events in one order.
+# 7 days for a module's events. audit in one partition: the audit chain reads every module's events in
+# one order. audit keeps every event (-1): time never drops one the audit module has not read. The chain
+# in Postgres is the record; Kafka is the transport.
+# ponytail: audit grows without end on this node's disk; a size limit or a deletion after the audit
+# module's commit when the disk asks for it.
 day=86400000
 for module in access customer grants antifraud notification catalogue staff; do
   topic "$module.events" 3 $((7 * day))
 done
-topic audit 1 $((14 * day))
+topic audit 1 -1
 
 user access_user "${KAFKA_ACCESS_PASSWORD:?KAFKA_ACCESS_PASSWORD is required}"
 user customer_user "${KAFKA_CUSTOMER_PASSWORD:?KAFKA_CUSTOMER_PASSWORD is required}"
