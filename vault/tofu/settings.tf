@@ -43,12 +43,28 @@ locals {
   address = "[0-9]{1,3}([.][0-9]{1,3}){3}(/[0-9]{1,2})?"
   # The ship settings: an empty endpoint ships nothing of that kind.
   shipping = local.input["LOG_SHIP_PROTOCOL"] != "off" || local.input["METRICS_SHIP_ENDPOINT"] != "" || local.input["TRACES_SHIP_ENDPOINT"] != ""
+  # Database heeyid: one schema and one user for each module (postgres/init.sql), and the Hikari pool
+  # size of each module in each app that loads it. An app loads a module when it serves it or calls it
+  # in-process.
+  db_modules = ["access", "customer", "grants", "antifraud", "notification", "catalogue", "staff", "audit"]
+  db_pools = {
+    "customer-gw" = { access = 8, customer = 8, grants = 10, antifraud = 4, notification = 3, catalogue = 2 }
+    "admin-gw"    = { customer = 3, staff = 3, grants = 2, notification = 2, antifraud = 1, catalogue = 2 }
+    "workers"     = { access = 2, customer = 2, grants = 2, antifraud = 2, notification = 3, catalogue = 1, staff = 1, audit = 3 }
+  }
 }
 
 resource "random_password" "this" {
-  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter", "valkey-sms-adapter", "valkey-taf-adapter", "heeyid-db-migration", "heeyid-db-app", "valkey-customer-gw", "valkey-admin-gw", "valkey-workers"])
+  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter", "valkey-sms-adapter", "valkey-taf-adapter", "valkey-customer-gw", "valkey-admin-gw", "valkey-workers"])
   length   = 32
   special  = false # values go into env files and JDBC URLs unquoted
+}
+
+# The module users of database heeyid, and heeyid_viewer (SELECT only).
+resource "random_password" "db" {
+  for_each = toset(concat(local.db_modules, ["viewer"]))
+  length   = 32
+  special  = false
 }
 
 # The AES-256 key of the MyID tokens in Valkey (SAD TB-5: cached in Valkey only encrypted).
@@ -143,12 +159,28 @@ resource "vault_kv_secret_v2" "stack" {
 resource "vault_kv_secret_v2" "postgres" {
   mount = vault_mount.secret.path
   name  = "env/postgres"
-  data_json = jsonencode({
-    POSTGRES_PASSWORD            = random_password.this["postgres"].result
-    KEYCLOAK_DB_PASSWORD         = random_password.this["keycloak-db"].result
-    HEEYID_DB_MIGRATION_PASSWORD = random_password.this["heeyid-db-migration"].result
-    HEEYID_DB_APP_PASSWORD       = random_password.this["heeyid-db-app"].result
-  })
+  data_json = jsonencode(merge(
+    { for u in keys(random_password.db) : "HEEYID_DB_${upper(u)}_PASSWORD" => random_password.db[u].result },
+    {
+      POSTGRES_PASSWORD    = random_password.this["postgres"].result
+      KEYCLOAK_DB_PASSWORD = random_password.this["keycloak-db"].result
+  }))
+}
+
+# Each app's connection to database heeyid: for each module it loads, the module's own user and its own
+# Hikari pool (heeyid.db.<module>.*). secret/env/<app>-db, rendered together with the app's other
+# settings when the app comes. The sum of every pool, Keycloak's included, stays under Postgres'
+# max_connections (README, "Postgres connections").
+resource "vault_kv_secret_v2" "db" {
+  for_each = local.db_pools
+  mount    = vault_mount.secret.path
+  name     = "env/${each.key}-db"
+  data_json = jsonencode(merge([for m, size in each.value : {
+    "HEEYID_DB_${upper(m)}_URL"       = "jdbc:postgresql://postgres:5432/heeyid"
+    "HEEYID_DB_${upper(m)}_USERNAME"  = m
+    "HEEYID_DB_${upper(m)}_PASSWORD"  = random_password.db[m].result
+    "HEEYID_DB_${upper(m)}_POOL_SIZE" = tostring(size)
+  }]...))
 }
 
 # Valkey: the default user is off; each service has its own ACL user for its own keys
