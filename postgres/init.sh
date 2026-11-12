@@ -4,4 +4,6 @@
 set -eu
 export PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 exec psql -h postgres -U heeyid_admin -d heeyid -f /sql/init.sql \
-  -v keycloak_password="${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD is required}"
+  -v keycloak_password="${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD is required}" \
+  -v heeyid_migration_password="${HEEYID_DB_MIGRATION_PASSWORD:?HEEYID_DB_MIGRATION_PASSWORD is required}" \
+  -v heeyid_app_password="${HEEYID_DB_APP_PASSWORD:?HEEYID_DB_APP_PASSWORD is required}"
