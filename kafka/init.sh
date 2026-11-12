@@ -3,7 +3,7 @@
 # and their ACLs, from the settings rendered from Vault (secret/env/kafka). Each step is safe to run again: a topic is
 # made once and keeps its partitions, a user's password is set again, an ACL is added once.
 #   <module>.events  one per module's outbox; only that module's user writes it.
-#   audit            every module's user writes it; only audit_user reads it, in group audit.
+#   audit            every module's user writes it; inside heeyID only audit_user reads it, in group audit.
 # Nobody reads <module>.events in MVP 1: the relay writes them for later readers; the calls after a
 # commit to other modules go through the relay, not through Kafka readers.
 # The passwords go to Kafka in files only this process reads, never on a command line.

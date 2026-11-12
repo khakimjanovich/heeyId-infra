@@ -206,7 +206,8 @@ resource "random_password" "kafka" {
 }
 
 # Kafka: user admin (PLAIN) for the node and kafka-init, and one SCRAM user <module>_user per module,
-# which writes only its topic <module>.events and audit; only audit_user reads audit (kafka/init.sh).
+# which writes only its topic <module>.events and audit; inside heeyID only audit_user reads audit
+# (kafka/init.sh).
 resource "vault_kv_secret_v2" "kafka" {
   mount     = vault_mount.secret.path
   name      = "env/kafka"
