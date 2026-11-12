@@ -501,16 +501,20 @@ wave_postgres() {
   PGPASSWORD=$(jq -r '.KEYCLOAK_DB_PASSWORD' .env.vault/postgres.json) scripts/stack.sh exec -T -e PGPASSWORD postgres \
     psql -h postgres -U keycloak -d keycloak -Atc 'select 1' < /dev/null > /dev/null \
     || die "user keycloak can't sign in to database keycloak with its password (secret/env/postgres): scripts/stack.sh up postgres-init sets it again"
-  local user
-  for user in heeyid_migration heeyid_app; do
-    PGPASSWORD=$(jq -r --arg k "HEEYID_DB_${user#heeyid_}_PASSWORD" '.[$k | ascii_upcase]' .env.vault/postgres.json) scripts/stack.sh exec -T -e PGPASSWORD postgres \
+  local user key
+  for user in access_user customer_user grants_user antifraud_user notification_user catalogue_user staff_user audit_user heeyid_viewer; do
+    key=${user%_user}; key=${key#heeyid_}
+    PGPASSWORD=$(jq -r --arg k "HEEYID_DB_${key}_PASSWORD" '.[$k | ascii_upcase]' .env.vault/postgres.json) scripts/stack.sh exec -T -e PGPASSWORD postgres \
       psql -h postgres -U "$user" -d heeyid -Atc 'select 1' < /dev/null > /dev/null \
       || die "user $user can't sign in to database heeyid with its password (secret/env/postgres): scripts/stack.sh up postgres-init sets it again"
   done
-  say "Users keycloak, heeyid_migration and heeyid_app sign in to their databases with their passwords."
+  [ "$(PGPASSWORD=$(jq -r '.HEEYID_DB_ACCESS_PASSWORD' .env.vault/postgres.json) scripts/stack.sh exec -T -e PGPASSWORD postgres \
+    psql -h postgres -U access_user -d heeyid -Atc "select has_schema_privilege('customer', 'USAGE')" < /dev/null)" = f ] \
+    || die "user access_user may use schema customer: postgres/init.sql must give a module user no right in another module's schema"
+  say "Users keycloak, heeyid_viewer and the eight module users sign in to their databases; user access_user is refused schema customer."
 }
 access_postgres() {
-  say "  Postgres        no published port: Keycloak's database, and heeyid for the gateways. Break-glass, from this"
+  say "  Postgres        no published port: Keycloak's database, and heeyid with a schema for each module. Break-glass, from this"
   say "                  host and logged: scripts/stack.sh exec postgres psql -U heeyid_admin -d heeyid"
 }
 

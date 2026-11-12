@@ -12,20 +12,35 @@ REVOKE ALL ON SCHEMA public FROM PUBLIC;
 SELECT 'CREATE DATABASE keycloak OWNER keycloak' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'keycloak')\gexec
 REVOKE ALL ON DATABASE keycloak FROM PUBLIC; -- its owner keycloak only
 
--- The gateways' database heeyid (this one, POSTGRES_DB), SAD §10.7 HID-30. Two users:
---   heeyid_migration  owns schema heeyid: the gateways' migrations create the tables with it.
---   heeyid_app        what the customer gateway, the admin gateway and the workers connect with:
---                     USAGE on the schema only, never CREATE.
--- The grants on the tables come with the gateway migrations, not here. There heeyid_app gets no UPDATE
--- or DELETE on the append-only tables (audit_event, SAD).
-SELECT 'CREATE USER heeyid_migration' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'heeyid_migration')\gexec
-SELECT format('ALTER USER heeyid_migration WITH PASSWORD %L', :'heeyid_migration_password')\gexec
-SELECT 'CREATE USER heeyid_app' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'heeyid_app')\gexec
-SELECT format('ALTER USER heeyid_app WITH PASSWORD %L', :'heeyid_app_password')\gexec
+-- The gateways' and the workers' database heeyid (this one, POSTGRES_DB): one schema for each module and
+-- one user <module>_user that owns it. The user runs its module's migrations there and has no right in any
+-- other schema: a module cannot read another module's tables. Schema public is closed above.
+-- heeyid_viewer reads every module's tables and changes nothing. The grants on a module's tables come
+-- with its migrations, not here.
+SELECT format('CREATE USER %I', u) FROM (VALUES
+  ('access_user'), ('customer_user'), ('grants_user'), ('antifraud_user'), ('notification_user'),
+  ('catalogue_user'), ('staff_user'), ('audit_user'), ('heeyid_viewer')) v(u)
+  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = u)\gexec
+SELECT format('ALTER USER %I WITH PASSWORD %L', u, p) FROM (VALUES
+  ('access_user', :'access_password'), ('customer_user', :'customer_password'),
+  ('grants_user', :'grants_password'), ('antifraud_user', :'antifraud_password'),
+  ('notification_user', :'notification_password'), ('catalogue_user', :'catalogue_password'),
+  ('staff_user', :'staff_password'), ('audit_user', :'audit_password'),
+  ('heeyid_viewer', :'viewer_password')) v(u, p)\gexec
 
 REVOKE ALL ON DATABASE heeyid FROM PUBLIC;
-GRANT CONNECT ON DATABASE heeyid TO heeyid_migration, heeyid_app;
-CREATE SCHEMA IF NOT EXISTS heeyid AUTHORIZATION heeyid_migration;
-GRANT USAGE ON SCHEMA heeyid TO heeyid_app;
-ALTER USER heeyid_migration IN DATABASE heeyid SET search_path = heeyid;
-ALTER USER heeyid_app IN DATABASE heeyid SET search_path = heeyid;
+GRANT CONNECT ON DATABASE heeyid TO access_user, customer_user, grants_user, antifraud_user, notification_user,
+  catalogue_user, staff_user, audit_user, heeyid_viewer;
+DO $$
+DECLARE m text;
+BEGIN
+  FOREACH m IN ARRAY ARRAY['access', 'customer', 'grants', 'antifraud', 'notification', 'catalogue', 'staff', 'audit'] LOOP
+    EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I AUTHORIZATION %I', m, m || '_user');
+    EXECUTE format('REVOKE ALL ON SCHEMA %I FROM PUBLIC', m);
+    EXECUTE format('ALTER USER %I IN DATABASE heeyid SET search_path = %I', m || '_user', m);
+    -- heeyid_viewer: SELECT on the tables there are now, and on each table the module's user makes later.
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO heeyid_viewer', m);
+    EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO heeyid_viewer', m);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I GRANT SELECT ON TABLES TO heeyid_viewer', m || '_user', m);
+  END LOOP;
+END $$;

@@ -9,7 +9,7 @@ For now it runs the MyID, SMS, TAF and push adapters, with their stores, sign-in
 | Service | What | Reached by |
 |---|---|---|
 | `vault` (`heeyid-vault`) | settings and secrets, heeyID's CA | the consoles' door (`vault.<CONSOLES_DOMAIN>`), the installer |
-| `postgres`, `postgres-init` | Keycloak's database | Keycloak |
+| `postgres`, `postgres-init` | Keycloak's database; database `heeyid` with one schema and one user for each module | Keycloak; the gateways and the workers when they come |
 | `valkey` | the MyID adapter's tokens (keys `myid-adapter:*`, encrypted); the SMS adapter's idempotency keys and message statuses (keys `sms-adapter:key:*`, `sms-adapter:message:*`, no text and no phone number); the TAF adapter's token (key `taf-adapter:token`, encrypted); one ACL user per service, append-only file each second | the MyID adapter (user `myid-adapter`), the SMS adapter (user `sms-adapter`), the TAF adapter (user `taf-adapter`) |
 | `heeyid-keycloak`, `keycloak-config` | realm `services` (services' tokens), realm `people` (the consoles' people, from the bank's directory) | services at `https://heeyid-keycloak:8443`, people through the consoles' door |
 | `observability` | Grafana, Loki, Prometheus, Tempo, the collector; alerts by mail | Grafana through the consoles' door |

@@ -22,7 +22,7 @@ networks:
 
 services:
 
-  # Keycloak's database and the gateways' database heeyid with its users (postgres/init.sql).
+  # Keycloak's database, and database heeyid with one schema and one user for each module (postgres/init.sql).
   postgres:
     image: postgres:17.6-alpine
     logging: *logging
@@ -77,6 +77,7 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: keycloak
+      KC_DB_POOL_MAX_SIZE: "30" # counted against Postgres' max_connections (README, "Postgres connections")
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_HTTP_ENABLED: "false"
       KC_HTTPS_PORT: "8443"
