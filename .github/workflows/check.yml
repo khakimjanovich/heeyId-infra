@@ -1,5 +1,6 @@
 # The installer: its scripts parse under the bash macOS ships (3.2), and docs/settings.md's tables is the
 # one scripts/install.sh docs writes from scripts/inputs.json, which names exactly the inputs Tofu reads.
+# The Compose files and the OpenTofu configuration are valid.
 # Pushes to main and every pull request.
 name: check
 
@@ -27,3 +28,25 @@ jobs:
           for script in scripts/*.sh; do /bin/bash -n "$script"; done
       - name: docs/settings.md's tables matches the inputs
         run: /bin/bash scripts/install.sh docs --check
+      - name: The Compose files are valid
+        run: |
+          command -v docker > /dev/null || { echo "docker is missing on this runner: install Docker" >&2; exit 1; }
+          # the runner keeps its own Docker config, which lacks the Compose plugin: use the user's
+          export DOCKER_CONFIG="$HOME/.docker"
+          docker compose version > /dev/null || { echo "the Docker Compose plugin is missing on this runner: install Docker Compose v2" >&2; exit 1; }
+          # placeholder values, for this step only: the files demand them, and config reads no secret
+          export LOG_MAX_SIZE=1m LOG_MAX_FILES=1 CONSOLES_DOMAIN=example.test CONSOLES_ADDRESS=127.0.0.1 \
+            CALLBACKS_ADDRESS=127.0.0.1 HEEYID_VERSION=0 VAULT_AUDIT_MAX_MB=1 VAULT_AUDIT_KEEP=1 DOCKER_ROOT_DIR=/var/lib/docker
+          # the files Vault renders at install (git-ignored): empty ones let config run
+          mkdir -p .env.vault
+          trap 'rm -rf .env.vault' EXIT
+          for name in $(grep -ho '\.env\.vault/[a-z-]*\.env' docker-compose.yml vault/docker-compose.yml | sort -u); do : > "$name"; done
+          for file in docker-compose.yml vault/docker-compose.yml; do docker compose -f "$file" config --quiet; done
+      - name: The OpenTofu configuration is valid
+        run: |
+          command -v docker > /dev/null || { echo "docker is missing on this runner: install Docker" >&2; exit 1; }
+          # the image scripts/helpers.sh runs OpenTofu in, as this user so the files it leaves can be removed
+          for args in "fmt -check -recursive" "init -backend=false -input=false" "validate"; do
+            docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/vault:/vault-config" -w /vault-config/tofu \
+              ghcr.io/opentofu/opentofu:1.10.6 $args
+          done
