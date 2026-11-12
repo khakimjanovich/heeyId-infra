@@ -1,9 +1,11 @@
 #!/bin/sh
-# kafka-init's entrypoint, on every up: the topics, the modules' users (SCRAM-SHA-512) and their ACLs,
-# from the settings rendered from Vault (secret/env/kafka). Each step is safe to run again: a topic is
+# kafka-init's entrypoint, on every up: the topics, the modules' users <module>_user (SCRAM-SHA-512)
+# and their ACLs, from the settings rendered from Vault (secret/env/kafka). Each step is safe to run again: a topic is
 # made once and keeps its partitions, a user's password is set again, an ACL is added once.
 #   <module>.events  one per module's outbox; only that module's user writes it.
-#   audit            every module's user writes it; only user audit reads it, in group audit.
+#   audit            every module's user writes it; only audit_user reads it, in group audit.
+# Nobody reads <module>.events in MVP 1: the relay writes them for later readers; the calls after a
+# commit to other modules go through the relay, not through Kafka readers.
 # The passwords go to Kafka in files only this process reads, never on a command line.
 # A missing value stops it here, by name.
 set -eu
@@ -41,17 +43,17 @@ for module in access customer grants antifraud notification catalogue staff; do
 done
 topic audit 1 $((14 * day))
 
-user access "${KAFKA_ACCESS_PASSWORD:?KAFKA_ACCESS_PASSWORD is required}"
-user customer "${KAFKA_CUSTOMER_PASSWORD:?KAFKA_CUSTOMER_PASSWORD is required}"
-user grants "${KAFKA_GRANTS_PASSWORD:?KAFKA_GRANTS_PASSWORD is required}"
-user antifraud "${KAFKA_ANTIFRAUD_PASSWORD:?KAFKA_ANTIFRAUD_PASSWORD is required}"
-user notification "${KAFKA_NOTIFICATION_PASSWORD:?KAFKA_NOTIFICATION_PASSWORD is required}"
-user catalogue "${KAFKA_CATALOGUE_PASSWORD:?KAFKA_CATALOGUE_PASSWORD is required}"
-user staff "${KAFKA_STAFF_PASSWORD:?KAFKA_STAFF_PASSWORD is required}"
-user audit "${KAFKA_AUDIT_PASSWORD:?KAFKA_AUDIT_PASSWORD is required}"
+user access_user "${KAFKA_ACCESS_PASSWORD:?KAFKA_ACCESS_PASSWORD is required}"
+user customer_user "${KAFKA_CUSTOMER_PASSWORD:?KAFKA_CUSTOMER_PASSWORD is required}"
+user grants_user "${KAFKA_GRANTS_PASSWORD:?KAFKA_GRANTS_PASSWORD is required}"
+user antifraud_user "${KAFKA_ANTIFRAUD_PASSWORD:?KAFKA_ANTIFRAUD_PASSWORD is required}"
+user notification_user "${KAFKA_NOTIFICATION_PASSWORD:?KAFKA_NOTIFICATION_PASSWORD is required}"
+user catalogue_user "${KAFKA_CATALOGUE_PASSWORD:?KAFKA_CATALOGUE_PASSWORD is required}"
+user staff_user "${KAFKA_STAFF_PASSWORD:?KAFKA_STAFF_PASSWORD is required}"
+user audit_user "${KAFKA_AUDIT_PASSWORD:?KAFKA_AUDIT_PASSWORD is required}"
 
 for module in access customer grants antifraud notification catalogue staff; do
-  kafka kafka-acls --add --allow-principal "User:$module" --operation Write --topic "$module.events" --topic audit > /dev/null
+  kafka kafka-acls --add --allow-principal "User:${module}_user" --operation Write --topic "$module.events" --topic audit > /dev/null
 done
-kafka kafka-acls --add --allow-principal User:audit --operation Read --topic audit --group audit > /dev/null
+kafka kafka-acls --add --allow-principal User:audit_user --operation Read --topic audit --group audit > /dev/null
 echo "kafka: 8 topics, 8 users, their ACLs"

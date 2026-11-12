@@ -377,7 +377,7 @@ close_session() {
 
 PROGRESS=.install/progress
 ACCESS_LIST=.install/access.txt
-WAVES="host vault postgres valkey keycloak observability services"
+WAVES="host vault postgres valkey kafka keycloak observability services"
 
 confirmed() { grep -q "^$1 " "$PROGRESS" 2> /dev/null; }
 
@@ -537,6 +537,36 @@ access_valkey() {
   say "  Valkey          no published port: each service as its own ACL user (valkey/start.sh)"
 }
 
+wave_kafka() {
+  stack up kafka kafka-init || die "Kafka didn't start (above): scripts/stack.sh logs kafka kafka-init"
+  local user password
+  # Each probe user's sign-in goes to a file in the kafka container through stdin, never on a command line.
+  for user in access_user audit_user; do
+    password=$(jq -r --arg k "KAFKA_$(printf '%s' "${user%_user}" | tr '[:lower:]' '[:upper:]')_PASSWORD" '.[$k]' .env.vault/kafka.json)
+    printf 'security.protocol=SASL_PLAINTEXT\nsasl.mechanism=SCRAM-SHA-512\nsasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";\n' "$user" "$password" \
+      | scripts/stack.sh exec -T kafka sh -c "umask 077; cat > /tmp/install-$user.properties"
+  done
+  kafka_tool() { scripts/stack.sh exec -T -e KAFKA_HEAP_OPTS=-Xmx128m kafka "/opt/kafka/bin/$1.sh" --bootstrap-server kafka:9092 --command-config "/tmp/install-$2.properties" "${@:3}" 2>&1; }
+  # A line in access.events no one reads in MVP 1; it goes with the topic's 7 days. An empty read of
+  # audit ends in a TimeoutException: only an authorization error is a failure there.
+  local own other audit
+  own=$(echo "installer probe" | kafka_tool kafka-console-producer access_user --topic access.events)
+  other=$(echo "installer probe" | kafka_tool kafka-console-producer access_user --topic customer.events)
+  audit=$(kafka_tool kafka-console-consumer audit_user --topic audit --group audit --timeout-ms 10000 < /dev/null)
+  scripts/stack.sh exec -T kafka sh -c 'rm -f /tmp/install-*.properties' < /dev/null
+  case $own in *Exception* | *ERROR*) die "user access_user can't write its own topic access.events: $own (kafka/init.sh)" ;; esac
+  case $other in *TopicAuthorizationException*) ;; *) die "user access_user writes topic customer.events: kafka/init.sh gives too much" ;; esac
+  case $audit in
+    *AuthorizationException*) die "user audit_user can't read topic audit in group audit: $audit (kafka/init.sh)" ;;
+    *"Processed a total of"*) ;;
+    *) die "user audit_user's read of topic audit gave no answer: $audit" ;;
+  esac
+  say "User access_user writes its own topic access.events and is refused customer.events; audit_user reads audit in group audit."
+}
+access_kafka() {
+  say "  Kafka           no published port: each module as its own SCRAM user <module>_user (kafka/init.sh)"
+}
+
 wave_keycloak() {
   stack up heeyid-keycloak keycloak-config || die "Keycloak didn't start (above): scripts/stack.sh logs heeyid-keycloak keycloak-config"
   local kc token page
@@ -665,9 +695,10 @@ install() {
   wave vault "2. Vault"
   wave postgres "3. Postgres"
   wave valkey "4. Valkey"
-  wave keycloak "5. Keycloak"
-  wave observability "6. Grafana and observability"
-  wave services "7. The adapters"
+  wave kafka "5. Kafka"
+  wave keycloak "6. Keycloak"
+  wave observability "7. Grafana and observability"
+  wave services "8. The adapters"
   step "The whole stack"
   stack up || die "the stack didn't come up whole (above)"
   check

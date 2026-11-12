@@ -2,7 +2,7 @@
 
 Runs heeyID on one Linux host with Docker Compose, the same way `cards-infra` and `ecom-infra` run theirs. This repo builds nothing; it pulls the images built from [heeyid](https://github.com/khakimjanovich/heeyid) at `HEEYID_VERSION`.
 
-For now: the MyID adapter (`ghcr.io/khakimjanovich/myid-adapter`) and the SMS adapter (`ghcr.io/khakimjanovich/sms-adapter`, SMS Xabar, with its delivery reports' door `heeyid-callbacks`) and the TAF adapter (`ghcr.io/khakimjanovich/taf-adapter`, Telecom AntiFraud) and the push adapter (`ghcr.io/khakimjanovich/push-adapter`, Firebase Cloud Messaging) with what they need, Vault (settings, secrets, heeyID's CA), Valkey (the MyID adapter's tokens, the SMS adapter's keys and statuses, the TAF adapter's token), Keycloak (realm `services` for the services' tokens, realm `people` for the consoles), Postgres (Keycloak's database, and `heeyid` with one schema and one user for each module), and observability: heeyID's own Grafana, Loki, Prometheus and Tempo, and, when the bank gives collectors, its logs, metrics and traces there too. The customer gateway, the admin gateway, the workers, Kafka and the administrator panel come with their images.
+For now: the MyID adapter (`ghcr.io/khakimjanovich/myid-adapter`) and the SMS adapter (`ghcr.io/khakimjanovich/sms-adapter`, SMS Xabar, with its delivery reports' door `heeyid-callbacks`) and the TAF adapter (`ghcr.io/khakimjanovich/taf-adapter`, Telecom AntiFraud) and the push adapter (`ghcr.io/khakimjanovich/push-adapter`, Firebase Cloud Messaging) with what they need, Vault (settings, secrets, heeyID's CA), Valkey (the MyID adapter's tokens, the SMS adapter's keys and statuses, the TAF adapter's token), Keycloak (realm `services` for the services' tokens, realm `people` for the consoles), Postgres (Keycloak's database, and `heeyid` with one schema and one user for each module), Kafka (a topic for each module's outbox and `audit`, a user for each module), and observability: heeyID's own Grafana, Loki, Prometheus and Tempo, and, when the bank gives collectors, its logs, metrics and traces there too. The customer gateway, the admin gateway, the workers and the administrator panel come with their images.
 
 Design: SAD MVP 1 §6 (deployment view), §7.2 (key custody), §8 (integration adapters), constraints C-1, C-4, C-10, C-15.
 
@@ -11,7 +11,7 @@ Rule: every input has no default. A missing value stops the install or the start
 ## Run
 
 ```bash
-scripts/install.sh                       # first install: seven waves, asks for what it needs
+scripts/install.sh                       # first install: eight waves, asks for what it needs
 scripts/install.sh check
 scripts/stack.sh up                      # start an installed stack
 ```

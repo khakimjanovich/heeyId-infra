@@ -46,7 +46,7 @@ v token revoke -self
 
 ## Installer waves
 
-`scripts/install.sh` runs seven waves. Each starts only its services, proves real access, prints how to get in, waits for `ok`. `.install/progress` records confirmed waves (no secrets); a rerun continues at the first unconfirmed one.
+`scripts/install.sh` runs eight waves. Each starts only its services, proves real access, prints how to get in, waits for `ok`. `.install/progress` records confirmed waves (no secrets); a rerun continues at the first unconfirmed one.
 
 | Wave | Does | Proves |
 |---|---|---|
@@ -54,9 +54,10 @@ v token revoke -self
 | 2 Vault | inits Vault (5 shares, 3 to unseal), shows shares and root token once until each keyholder pastes theirs back, unseals, asks the state passphrase, every setting ([settings.md](settings.md)), the MyID credential and the Xabar login and the FCM service account's key among them, writes `secret/input/heeyid`, `tofu apply`, renders settings, pulls images | consoles' door up; `vault.<CONSOLES_DOMAIN>` serves heeyID's certificate; a settings-only token reads `secret/env/stack` and is refused `secret/input/heeyid` |
 | 3 Postgres | `postgres`, `postgres-init` | user `keycloak` signs in to its database; the eight module users and `heeyid_viewer` to database `heeyid`; user `access_user` is refused schema `customer` |
 | 4 Valkey | `valkey` | users `myid-adapter`, `sms-adapter`, `taf-adapter`, `customer-gw`, `admin-gw` and `workers` write their own keys only; nobody gets in without a sign-in |
-| 5 Keycloak | `heeyid-keycloak`, `keycloak-config` | `customer-gateway` gets a token for `myid-adapter`, `sms-adapter` and `taf-adapter` with roles `myid.use`, `sms.use` and `taf.use`; `workers` gets one for `myid-adapter` and `push-adapter` with roles `myid.use` and `push.use`; realm `people` sign-in answers with heeyID's certificate |
-| 6 Grafana | `observability` (and `mailpit` when on) | sign-in redirects to realm `people`; Prometheus, Loki, Tempo answer |
-| 7 Adapters | `myid-adapter`, `sms-adapter`, `taf-adapter`, `push-adapter`, `heeyid-callbacks` | each adapter healthy, metrics in Grafana; the delivery reports' door refuses this host (403) |
+| 5 Kafka | `kafka`, `kafka-init` | user `access_user` writes its own topic `access.events` and is refused `customer.events`; `audit_user` reads `audit` in group `audit` |
+| 6 Keycloak | `heeyid-keycloak`, `keycloak-config` | `customer-gateway` gets a token for `myid-adapter`, `sms-adapter` and `taf-adapter` with roles `myid.use`, `sms.use` and `taf.use`; `workers` gets one for `myid-adapter` and `push-adapter` with roles `myid.use` and `push.use`; realm `people` sign-in answers with heeyID's certificate |
+| 7 Grafana | `observability` (and `mailpit` when on) | sign-in redirects to realm `people`; Prometheus, Loki, Tempo answer |
+| 8 Adapters | `myid-adapter`, `sms-adapter`, `taf-adapter`, `push-adapter`, `heeyid-callbacks` | each adapter healthy, metrics in Grafana; the delivery reports' door refuses this host (403) |
 
 After the waves: whole stack once more, health check, Vault snapshot and OpenTofu state in `~/backups`, root token revoked, `.install/access.txt` written (URLs and groups, no secrets).
 

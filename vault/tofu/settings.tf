@@ -39,21 +39,14 @@ locals {
     "heeyid-keycloak" = ["keycloak.${var.consoles_domain}"]
     "mailpit"         = ["mailpit.${var.consoles_domain}"]
   }
-  # The gateways' modules, each with its own Kafka user (kafka/init.sh), and the modules each
-  # deployable loads: it gets those users' settings only.
-  modules = ["access", "customer", "grants", "antifraud", "notification", "catalogue", "staff", "audit"]
-  kafka_apps = {
-    "customer-gw" = ["access", "customer", "grants", "antifraud", "notification", "catalogue"]
-    "admin-gw"    = ["customer", "staff", "grants", "notification", "antifraud", "catalogue"]
-    "workers"     = local.modules
-  }
   # An IPv4 address or network, as heeyid-callbacks takes them.
   address = "[0-9]{1,3}([.][0-9]{1,3}){3}(/[0-9]{1,2})?"
   # The ship settings: an empty endpoint ships nothing of that kind.
   shipping = local.input["LOG_SHIP_PROTOCOL"] != "off" || local.input["METRICS_SHIP_ENDPOINT"] != "" || local.input["TRACES_SHIP_ENDPOINT"] != ""
-  # Database heeyid: one schema and one user <module>_user for each module (postgres/init.sql), and the Hikari pool
-  # size of each module in each app that loads it. An app loads a module when it serves it or calls it
-  # in-process.
+  # The modules: in database heeyid one schema and one user <module>_user each (postgres/init.sql), in
+  # Kafka one user <module>_user each (kafka/init.sh). db_pools: the modules each app loads, with each
+  # one's Hikari pool size; an app loads a module when it serves it or calls it in-process. An app gets
+  # the database and Kafka settings of the modules it loads only.
   db_modules = ["access", "customer", "grants", "antifraud", "notification", "catalogue", "staff", "audit"]
   db_pools = {
     "customer-gw" = { access = 8, customer = 8, grants = 10, antifraud = 4, notification = 3, catalogue = 2 }
@@ -207,22 +200,22 @@ resource "vault_kv_secret_v2" "valkey" {
 }
 
 resource "random_password" "kafka" {
-  for_each = toset(concat(["admin"], local.modules))
+  for_each = toset(concat(["admin"], local.db_modules))
   length   = 32
   special  = false # values go into properties files unquoted
 }
 
-# Kafka: user admin (PLAIN) for the node and kafka-init, and one SCRAM user per module, which writes
-# only its topic <module>.events and audit; only user audit reads audit (kafka/init.sh).
+# Kafka: user admin (PLAIN) for the node and kafka-init, and one SCRAM user <module>_user per module,
+# which writes only its topic <module>.events and audit; only audit_user reads audit (kafka/init.sh).
 resource "vault_kv_secret_v2" "kafka" {
   mount     = vault_mount.secret.path
   name      = "env/kafka"
   data_json = jsonencode({ for u, p in random_password.kafka : "KAFKA_${upper(u)}_PASSWORD" => p.result })
 }
 
-# Each deployable's Kafka settings, apart from its other settings: one user per module it loads.
+# Each app's Kafka settings, secret/env/<app>-kafka: one user for each module it loads (local.db_pools).
 resource "vault_kv_secret_v2" "kafka_app" {
-  for_each = local.kafka_apps
+  for_each = { for app, pools in local.db_pools : app => keys(pools) }
   mount    = vault_mount.secret.path
   name     = "env/${each.key}-kafka"
   data_json = jsonencode(merge(
@@ -232,7 +225,7 @@ resource "vault_kv_secret_v2" "kafka_app" {
       HEEYID_KAFKA_SASL_MECHANISM    = "SCRAM-SHA-512"
       HEEYID_KAFKA_AUDIT_TOPIC       = "audit"
     },
-    { for m in each.value : "HEEYID_KAFKA_${upper(m)}_USERNAME" => m },
+    { for m in each.value : "HEEYID_KAFKA_${upper(m)}_USERNAME" => "${m}_user" },
     { for m in each.value : "HEEYID_KAFKA_${upper(m)}_PASSWORD" => random_password.kafka[m].result },
     { for m in each.value : "HEEYID_KAFKA_${upper(m)}_TOPIC" => "${m}.events" if m != "audit" },
     contains(each.value, "audit") ? { HEEYID_KAFKA_AUDIT_GROUP = "audit" } : {},
