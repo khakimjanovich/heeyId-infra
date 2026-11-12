@@ -501,17 +501,23 @@ wave_postgres() {
   PGPASSWORD=$(jq -r '.KEYCLOAK_DB_PASSWORD' .env.vault/postgres.json) scripts/stack.sh exec -T -e PGPASSWORD postgres \
     psql -h postgres -U keycloak -d keycloak -Atc 'select 1' < /dev/null > /dev/null \
     || die "user keycloak can't sign in to database keycloak with its password (secret/env/postgres): scripts/stack.sh up postgres-init sets it again"
-  say "User keycloak signs in to its database keycloak with its password."
+  local user
+  for user in heeyid_migration heeyid_app; do
+    PGPASSWORD=$(jq -r --arg k "HEEYID_DB_${user#heeyid_}_PASSWORD" '.[$k | ascii_upcase]' .env.vault/postgres.json) scripts/stack.sh exec -T -e PGPASSWORD postgres \
+      psql -h postgres -U "$user" -d heeyid -Atc 'select 1' < /dev/null > /dev/null \
+      || die "user $user can't sign in to database heeyid with its password (secret/env/postgres): scripts/stack.sh up postgres-init sets it again"
+  done
+  say "Users keycloak, heeyid_migration and heeyid_app sign in to their databases with their passwords."
 }
 access_postgres() {
-  say "  Postgres        no published port: Keycloak's database only, for now. Break-glass, from this"
+  say "  Postgres        no published port: Keycloak's database, and heeyid for the gateways. Break-glass, from this"
   say "                  host and logged: scripts/stack.sh exec postgres psql -U heeyid_admin -d heeyid"
 }
 
 wave_valkey() {
   stack up valkey || die "Valkey didn't start (above): scripts/stack.sh logs valkey"
   local user password ok refused
-  for user in myid-adapter sms-adapter taf-adapter; do
+  for user in myid-adapter sms-adapter taf-adapter customer-gw admin-gw workers; do
     password=$(jq -r --arg k "VALKEY_$(printf '%s' "$user" | tr '[:lower:]-' '[:upper:]_')_PASSWORD" '.[$k]' .env.vault/valkey.json)
     cli() { REDISCLI_AUTH=$password scripts/stack.sh exec -T -e REDISCLI_AUTH valkey valkey-cli --user "$user" "$@" < /dev/null 2>&1; }
     ok=$(cli set "$user:install:probe" 1 EX 10)
@@ -521,7 +527,7 @@ wave_valkey() {
   done
   refused=$(scripts/stack.sh exec -T valkey valkey-cli ping < /dev/null 2>&1)
   case $refused in *NOAUTH* | *NOPERM* | *WRONGPASS*) ;; *) die "Valkey answers without a sign-in ($refused): the default user must be off (valkey/start.sh)" ;; esac
-  say "Users myid-adapter, sms-adapter and taf-adapter write their own keys only; Valkey answers nobody without a sign-in."
+  say "Users myid-adapter, sms-adapter, taf-adapter, customer-gw, admin-gw and workers write their own keys only; Valkey answers nobody without a sign-in."
 }
 access_valkey() {
   say "  Valkey          no published port: each service as its own ACL user (valkey/start.sh)"

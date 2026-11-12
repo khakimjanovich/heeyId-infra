@@ -22,7 +22,7 @@ networks:
 
 services:
 
-  # Keycloak's database, for now the only one here (the gateways' come with them).
+  # Keycloak's database and the gateways' database heeyid with its users (postgres/init.sql).
   postgres:
     image: postgres:17.6-alpine
     logging: *logging

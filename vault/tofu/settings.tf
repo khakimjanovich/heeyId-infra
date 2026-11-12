@@ -46,7 +46,7 @@ locals {
 }
 
 resource "random_password" "this" {
-  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter", "valkey-sms-adapter", "valkey-taf-adapter"])
+  for_each = toset(["postgres", "keycloak-db", "keycloak-admin", "grafana-admin", "keycloak-config-client", "grafana-client", "valkey-myid-adapter", "valkey-sms-adapter", "valkey-taf-adapter", "heeyid-db-migration", "heeyid-db-app", "valkey-customer-gw", "valkey-admin-gw", "valkey-workers"])
   length   = 32
   special  = false # values go into env files and JDBC URLs unquoted
 }
@@ -139,13 +139,15 @@ resource "vault_kv_secret_v2" "stack" {
   }
 }
 
-# Postgres holds Keycloak's database only, for now.
+# Postgres: Keycloak's database, and the gateways' database heeyid with its users (postgres/init.sql).
 resource "vault_kv_secret_v2" "postgres" {
   mount = vault_mount.secret.path
   name  = "env/postgres"
   data_json = jsonencode({
-    POSTGRES_PASSWORD    = random_password.this["postgres"].result
-    KEYCLOAK_DB_PASSWORD = random_password.this["keycloak-db"].result
+    POSTGRES_PASSWORD            = random_password.this["postgres"].result
+    KEYCLOAK_DB_PASSWORD         = random_password.this["keycloak-db"].result
+    HEEYID_DB_MIGRATION_PASSWORD = random_password.this["heeyid-db-migration"].result
+    HEEYID_DB_APP_PASSWORD       = random_password.this["heeyid-db-app"].result
   })
 }
 
@@ -158,6 +160,9 @@ resource "vault_kv_secret_v2" "valkey" {
     VALKEY_MYID_ADAPTER_PASSWORD = random_password.this["valkey-myid-adapter"].result
     VALKEY_SMS_ADAPTER_PASSWORD  = random_password.this["valkey-sms-adapter"].result
     VALKEY_TAF_ADAPTER_PASSWORD  = random_password.this["valkey-taf-adapter"].result
+    VALKEY_CUSTOMER_GW_PASSWORD  = random_password.this["valkey-customer-gw"].result
+    VALKEY_ADMIN_GW_PASSWORD     = random_password.this["valkey-admin-gw"].result
+    VALKEY_WORKERS_PASSWORD      = random_password.this["valkey-workers"].result
   })
 }
 

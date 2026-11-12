@@ -7,6 +7,9 @@
 #   sms-adapter   its idempotency keys and message statuses (GET, SET with a TTL, DEL); the same
 #                 PING, INFO, HELLO and CLIENT SETINFO.
 #   taf-adapter   its TAF token (GET, SET with a TTL, DEL); the same PING, INFO, HELLO and CLIENT SETINFO.
+#   customer-gw   the customer gateway; admin-gw the admin gateway; workers the workers (SAD §5.2, §10.7
+#                 HID-30): each its own keys, with GET, SET (NX, EX), DEL, INCR, EXPIRE and TTL; the same
+#                 PING, INFO, HELLO and CLIENT SETINFO.
 # The passwords go to Valkey in an ACL file only this process reads, never on its command line.
 # A missing value stops it here, by name.
 set -eu
@@ -17,5 +20,8 @@ acl=/tmp/users.acl
   echo "user myid-adapter on >${VALKEY_MYID_ADAPTER_PASSWORD:?VALKEY_MYID_ADAPTER_PASSWORD is required} resetkeys ~myid-adapter:* resetchannels -@all +get +set +del +ping +info +hello +client|setinfo"
   echo "user sms-adapter on >${VALKEY_SMS_ADAPTER_PASSWORD:?VALKEY_SMS_ADAPTER_PASSWORD is required} resetkeys ~sms-adapter:* resetchannels -@all +get +set +del +ping +info +hello +client|setinfo"
   echo "user taf-adapter on >${VALKEY_TAF_ADAPTER_PASSWORD:?VALKEY_TAF_ADAPTER_PASSWORD is required} resetkeys ~taf-adapter:* resetchannels -@all +get +set +del +ping +info +hello +client|setinfo"
+  echo "user customer-gw on >${VALKEY_CUSTOMER_GW_PASSWORD:?VALKEY_CUSTOMER_GW_PASSWORD is required} resetkeys ~customer-gw:* resetchannels -@all +get +set +del +incr +expire +ttl +ping +info +hello +client|setinfo"
+  echo "user admin-gw on >${VALKEY_ADMIN_GW_PASSWORD:?VALKEY_ADMIN_GW_PASSWORD is required} resetkeys ~admin-gw:* resetchannels -@all +get +set +del +incr +expire +ttl +ping +info +hello +client|setinfo"
+  echo "user workers on >${VALKEY_WORKERS_PASSWORD:?VALKEY_WORKERS_PASSWORD is required} resetkeys ~workers:* resetchannels -@all +get +set +del +incr +expire +ttl +ping +info +hello +client|setinfo"
 } > "$acl"
 exec valkey-server --dir /data --appendonly yes --appendfsync everysec --aclfile "$acl" --protected-mode no
